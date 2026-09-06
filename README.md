@@ -1,5 +1,7 @@
 # TV Remocon
 
+**日本語** | [English](README.en.md)
+
 Android のホーム画面ウィジェットから、TP-Link Tapo の赤外線ハブ経由でテレビを操作する。
 通信は LAN 内で完結し、クラウドを経由しない。**開発からビルドまで Termux 上の端末だけで完結している。**
 

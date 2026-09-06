@@ -1,21 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  A remote seen face on, with the red power key that is the only red thing on the widget.
-
-  Content stays inside x 40..68, y 24..84 — well within the 66dp circle an adaptive icon is
-  guaranteed to show, so no mask shape can clip a key off.
-
-  The keypad is punched out of the body with evenOdd rather than drawn over it, so the shape
-  survives being flattened to a silhouette.
+  Themed-icon variant. A monochrome drawable is tinted by the launcher and keeps only its
+  alpha, so the red power key would vanish into the body. It is punched out as a ring here
+  instead, which reads the same way without relying on colour.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-
     <path
-        android:fillColor="#ECEFF1"
+        android:fillColor="#FFFFFF"
         android:fillType="evenOdd"
         android:pathData="M47,24 h14 a7,7 0 0 1 7,7 v46 a7,7 0 0 1 -7,7 h-14 a7,7 0 0 1 -7,-7 v-46 a7,7 0 0 1 7,-7 Z
+                          M48,37 a6,6 0 1 0 12,0 a6,6 0 1 0 -12,0 Z
+                          M51,37 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 Z
                           M51.5,52 a2.5,2.5 0 1 0 5,0 a2.5,2.5 0 1 0 -5,0 Z
                           M44.5,62 a2.5,2.5 0 1 0 5,0 a2.5,2.5 0 1 0 -5,0 Z
                           M51.5,62 a2.5,2.5 0 1 0 5,0 a2.5,2.5 0 1 0 -5,0 Z
@@ -23,8 +20,4 @@
                           M44.5,72 a2.5,2.5 0 1 0 5,0 a2.5,2.5 0 1 0 -5,0 Z
                           M51.5,72 a2.5,2.5 0 1 0 5,0 a2.5,2.5 0 1 0 -5,0 Z
                           M58.5,72 a2.5,2.5 0 1 0 5,0 a2.5,2.5 0 1 0 -5,0 Z" />
-
-    <!-- Power key, drawn over the body so it keeps its colour. -->
-    <path android:fillColor="#D32027"
-          android:pathData="M48.5,37 a5.5,5.5 0 1 0 11,0 a5.5,5.5 0 1 0 -11,0 Z" />
 </vector>
