@@ -2,9 +2,14 @@ package com.tvremocon.data
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
+import android.util.Log
 import java.io.File
+import java.security.InvalidKeyException
 import java.security.KeyStore
+import java.security.UnrecoverableKeyException
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -45,11 +50,14 @@ class SecretStore(context: Context) {
     }
 
     /**
-     * Returns the stored hash, or null when there is none or it cannot be decrypted.
+     * Returns the stored hash, or null when there is none or it could not be read.
      *
-     * Decryption failing is a real, recoverable state: the Keystore key is dropped when the
-     * user's screen lock changes or the app's data is restored onto a different device, and
-     * the right response is to ask for the password again, not to crash.
+     * Two different failures are deliberately not treated alike. Some mean the key is gone
+     * for good — the user changed their screen lock, or the data landed on another device —
+     * and the stored ciphertext will never decrypt again, so keeping it only delays asking
+     * for the password. Others are momentary: the Keystore can be busy during boot, and a
+     * read can fail. Discarding the credentials for one of those would make the user set the
+     * app up again over a hiccup, which is what this used to do — it caught Exception.
      */
     fun authHash(): ByteArray? {
         if (!file.exists()) return null
@@ -61,14 +69,49 @@ class SecretStore(context: Context) {
             Cipher.getInstance(TRANSFORMATION)
                 .apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, iv)) }
                 .doFinal(ciphertext)
-        } catch (e: GeneralSecurityExceptionOrIo) {
-            clear()
+        } catch (e: Exception) {
+            if (shouldDiscard(e)) {
+                Log.w(TAG, "stored credentials are unusable (${e.javaClass.simpleName}); clearing")
+                clear()
+            } else {
+                // Kept. The next attempt may well succeed, and setup is not re-run for it.
+                Log.w(TAG, "could not read stored credentials (${e.javaClass.simpleName})")
+            }
             null
         }
     }
 
     fun clear() {
         file.delete()
+    }
+
+    companion object {
+        private const val TAG = "TvRemocon"
+        private const val KEYSTORE = "AndroidKeyStore"
+        private const val KEY_ALIAS = "tvremocon.authhash"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val TAG_BITS = 128
+        private const val FILE_NAME = "authhash.bin"
+
+        /**
+         * Whether a failure means the stored ciphertext is permanently unreadable.
+         *
+         * Pure and visible for tests: the alternative is discovering the boundary by having
+         * someone's setup wiped. Only the exception type is used — never its message, which
+         * providers are free to word however they like.
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun shouldDiscard(e: Throwable): Boolean = when (e) {
+            // The GCM tag did not check out: wrong key, or the file was altered.
+            is AEADBadTagException -> true
+            // The Keystore entry no longer authorises this use, or is gone.
+            is KeyPermanentlyInvalidatedException -> true
+            is UnrecoverableKeyException -> true
+            is InvalidKeyException -> true
+            // Everything else — IO, a busy Keystore, a malformed-but-rereadable file — is
+            // treated as this attempt failing rather than the secret being lost.
+            else -> false
+        }
     }
 
     private fun key(): SecretKey {
@@ -90,14 +133,4 @@ class SecretStore(context: Context) {
         }.generateKey()
     }
 
-    private companion object {
-        const val KEYSTORE = "AndroidKeyStore"
-        const val KEY_ALIAS = "tvremocon.authhash"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val TAG_BITS = 128
-        const val FILE_NAME = "authhash.bin"
-    }
 }
-
-/** Both failure families mean the same thing here: the stored hash is no longer usable. */
-private typealias GeneralSecurityExceptionOrIo = Exception
