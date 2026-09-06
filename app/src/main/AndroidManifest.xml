@@ -31,13 +31,13 @@
         </activity>
 
         <!--
-          Phase 2 harness, kept for diagnosing the protocol against a real hub. exported so it
-          can be launched over adb; it takes nothing from the intent, so no key can be sent
-          from outside the app.
+          Protocol harness, kept for diagnosing against a real hub. Not exported: it has a
+          password field and can send any of the remote's keys, so no other app should be
+          able to put it on screen. Reachable from the launcher icon and over adb.
         -->
         <activity
             android:name=".ui.DebugActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="Debug"
             android:theme="@style/Theme.TVRemocon" />
 

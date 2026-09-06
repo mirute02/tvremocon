@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Compact grid: everything needed to watch TV. Shown when the launcher gives the widget too little room for the number pad — including a Fold's cover screen.
+  Compact grid: power/input/mute, channel and volume flanking the d-pad, then back/home/menu. Shown when the launcher gives the widget too little height for the number pad, including a Fold cover screen.
 
-  RemoteViews only allows a handful of layout classes, and GridLayout is one of them, so the
-  button grid is expressible without a custom view. Every cell exists in the XML with a fixed
-  id: RemoteViews cannot add views at runtime, it can only update the ones already here.
-  Unassigned slots are made INVISIBLE rather than GONE so the grid keeps its shape.
+  RemoteViews cannot add views at runtime, so every cell exists here with a fixed id and is
+  only updated. Three columns because that is what a remote looks like: the d-pad needs a
+  centre column with one either side, and Japanese channel keys are 1-12 in a 3x4 block.
+
+  Slot ids are shared between the two grids — slot_07 is OK in both — so resizing the widget
+  never moves a button the user has already learned.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -265,8 +267,8 @@
     </GridLayout>
 
     <!--
-      The only feedback channel a RemoteViews has. Says which of the four outcomes happened;
-      "outcome unknown" is deliberately not phrased as a failure.
+      The only feedback channel a RemoteViews has. Reports which of the four outcomes
+      happened; "outcome unknown" is deliberately not phrased as a failure.
     -->
     <TextView
         android:id="@+id/status"

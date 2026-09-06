@@ -174,7 +174,7 @@ class TvRemoteWidget : AppWidgetProvider() {
             RemoteViews(
                 mapOf(
                     SizeF(140f, 180f) to compact,
-                    SizeF(280f, 420f) to full,
+                    SizeF(160f, 380f) to full,
                 )
             )
 

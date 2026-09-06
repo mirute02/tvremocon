@@ -70,6 +70,14 @@ class WidgetSetupActivity : AppCompatActivity() {
         // exactly that.
         setResult(Activity.RESULT_CANCELED, resultIntent())
 
+        // APPWIDGET_CONFIGURE forces this activity to be exported, so any app can start it
+        // with any id. Only ids belonging to our own provider are accepted, so another app
+        // cannot steer setup at a widget it does not own.
+        if (appWidgetId !in ownWidgetIds()) {
+            finish()
+            return
+        }
+
         val settings = Settings(this)
 
         status = TextView(this).apply { setPadding(0, 0, 0, dp(12)) }
@@ -219,9 +227,9 @@ class WidgetSetupActivity : AppCompatActivity() {
 
     private fun save(remote: IrRemote) {
         val settings = Settings(this)
-        // Both grids are filled from the same key set: which one shows depends on the space
-        // the launcher gives the widget, and that changes when the user resizes it.
-        val slots = defaultSlots(remote, WidgetLayout.FULL) + defaultSlots(remote, WidgetLayout.COMPACT)
+        // One map covers both grids: FULL is COMPACT plus extra rows and the slot indices
+        // are shared, so a button keeps its place when the widget is resized.
+        val slots = defaultSlots(remote, WidgetLayout.FULL)
         settings.putWidget(appWidgetId, remote, slots)
 
         val missing = unresolvedFunctions(remote, WidgetLayout.FULL)
@@ -234,6 +242,11 @@ class WidgetSetupActivity : AppCompatActivity() {
         setResult(Activity.RESULT_OK, resultIntent())
         finish()
     }
+
+    private fun ownWidgetIds(): IntArray =
+        AppWidgetManager.getInstance(this).getAppWidgetIds(
+            android.content.ComponentName(this, com.tvremocon.widget.TvRemoteWidget::class.java)
+        )
 
     private fun resultIntent(): Intent =
         Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
