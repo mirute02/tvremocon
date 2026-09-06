@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  targetCellWidth/Height ask for a full number-pad-sized widget up front, but the wide resize
+  range is what matters: shrinking it swaps in the compact grid, so "small remote" and "remote
+  with numbers" are the same widget at two sizes rather than two things to install.
+
+  updatePeriodMillis is 0 because nothing here changes on a timer — the widget redraws when a
+  button is pressed and when setup finishes.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_remote_compact"
+    android:minWidth="180dp"
+    android:minHeight="220dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="6"
+    android:minResizeWidth="140dp"
+    android:minResizeHeight="180dp"
+    android:maxResizeWidth="640dp"
+    android:maxResizeHeight="800dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:configure="com.tvremocon.ui.WidgetSetupActivity"
+    android:description="@string/widget_description"
+    android:updatePeriodMillis="0" />

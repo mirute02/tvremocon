@@ -31,14 +31,39 @@
         </activity>
 
         <!--
-          Phase 2 harness. exported so it can be launched over adb during development;
-          it takes no parameters from the intent, so nothing can be driven from outside.
+          Phase 2 harness, kept for diagnosing the protocol against a real hub. exported so it
+          can be launched over adb; it takes nothing from the intent, so no key can be sent
+          from outside the app.
         -->
         <activity
             android:name=".ui.DebugActivity"
             android:exported="true"
             android:label="Debug"
             android:theme="@style/Theme.TVRemocon" />
+
+        <!-- The launcher starts this when a widget is placed, and removes the widget if it
+             finishes without RESULT_OK. -->
+        <activity
+            android:name=".ui.WidgetSetupActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TVRemocon">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Not exported: presses arrive as explicit intents from our own PendingIntents,
+             so nothing outside the app can ask it to send a key. -->
+        <receiver
+            android:name=".widget.TvRemoteWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tv_remote_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

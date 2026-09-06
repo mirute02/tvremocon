@@ -1,3 +1,40 @@
 <resources>
     <string name="app_name">TV Remocon</string>
+    <string name="widget_description">Tapo ハブ経由でテレビを操作するリモコン</string>
+    <string name="widget_tap_to_setup">タップして設定</string>
+
+    <!-- Widget status line. The only feedback a RemoteViews can give. -->
+    <string name="status_sending">送信中: %1$s</string>
+    <string name="status_accepted">ハブ受付済み: %1$s</string>
+    <string name="status_rejected">ハブが拒否: %1$s (%2$s)</string>
+    <!-- Not worded as a failure: the hub may have transmitted anyway. -->
+    <string name="status_unknown">結果不明: %1$s / テレビを確認</string>
+    <string name="status_not_sent">未送信: %1$s (%2$s)</string>
+    <string name="status_timed_out">時間内に応答なし</string>
+
+    <string name="reason_no_permission">ローカルネットワーク権限なし</string>
+    <string name="reason_no_wifi">Wi-Fi に接続していません</string>
+    <string name="reason_not_configured">未設定</string>
+    <string name="reason_bad_credentials">資格情報が一致しません</string>
+    <string name="reason_deadline">待ち時間切れ</string>
+
+    <string name="setup_intro">ハブを探すか、IP アドレスを直接入力してください</string>
+    <string name="setup_hint_host">ハブの IP アドレス（例 192.168.1.4）</string>
+    <string name="setup_hint_email">TP-Link のメールアドレス（大文字小文字はそのまま）</string>
+    <string name="setup_hint_password">パスワード</string>
+    <string name="setup_discover">ハブを探す</string>
+    <string name="setup_connect">接続してリモコンを選ぶ</string>
+    <string name="setup_searching">LAN を探索中…</string>
+    <string name="setup_none_found">見つかりませんでした。IP を直接入力してください</string>
+    <string name="setup_found">候補: %1$s</string>
+    <string name="setup_bad_host">プライベート IPv4 アドレスを入力してください</string>
+    <string name="setup_need_credentials">メールアドレスとパスワードを入力してください</string>
+    <string name="setup_connecting">%1$s に接続中…</string>
+    <string name="setup_not_a_hub">%1$s は IR ハブではありません</string>
+    <string name="setup_pick_remote">%1$s (%2$s)\n使えるリモコン %3$d 件。選んでください</string>
+    <string name="setup_remote_button">%1$s — %2$d キー</string>
+    <string name="setup_ac_unsupported">%1$s（エアコン）は方式が異なるため対象外</string>
+    <string name="setup_failed">接続失敗\n%1$s: %2$s</string>
+    <string name="setup_permission_granted">権限を取得しました</string>
+    <string name="setup_permission_denied">権限が拒否されました。設定 → アプリ から許可してください</string>
 </resources>
