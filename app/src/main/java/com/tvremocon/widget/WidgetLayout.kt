@@ -3,18 +3,37 @@ package com.tvremocon.widget
 import com.tvremocon.widget.RemoteFunction as F
 
 /**
- * How a button is drawn. RemoteViews cannot style a view at runtime beyond swapping a
- * background resource, so each style is a drawable prepared in advance.
+ * How a button is drawn.
+ *
+ * RemoteViews cannot style a view at runtime beyond swapping a background resource and a text
+ * colour, so every appearance is a drawable prepared in advance — including the dimmed
+ * variant each style wears while the widget is resting.
+ *
+ * Shape carries meaning here: steppers are square because you press them repeatedly without
+ * looking, digits are round because you aim at exactly one.
  */
-enum class ButtonStyle(val background: String, val textColor: String, val textSize: Int) {
+enum class ButtonStyle(
+    val background: String,
+    val textColor: String,
+    val textSize: Int,
+    val idleBackground: String = "${background}_idle",
+    val idleTextColor: String = "widget_idle_text",
+) {
     /** Dark rounded rectangle, the default for labelled keys. */
     NORMAL("widget_button", "widget_button_text", 11),
 
     /** Red, round, top right — the one button people find without looking. */
     POWER("widget_button_power", "widget_power_text", 11),
 
-    /** Larger and lighter, like the oversized channel digits on the real remote. */
-    NUMBER("widget_button_number", "widget_button_text", 17),
+    /** Round and blue-tinted, so the channel pad reads as its own group. */
+    NUMBER("widget_button_number", "widget_number_text", 16),
+
+    /**
+     * Volume and channel up/down. Square and deliberately muted: they are pressed by feel and
+     * in bursts, and making them shout would put the loudest colour on the least deliberate
+     * keys.
+     */
+    STEPPER("widget_button_stepper", "widget_stepper_text", 11),
 
     /** Part of the circular pad around 決定. */
     DPAD("widget_button_dpad", "widget_button_text", 15),
@@ -62,7 +81,7 @@ enum class WidgetLayout(val id: String, val cells: List<Cell>) {
     COMPACT(
         id = "compact",
         cells = listOf(
-            Cell(F.POWER, 4, ButtonStyle.POWER), Cell(F.CHANNEL_UP, 4), Cell(F.CHANNEL_DOWN, 4),
+            Cell(F.POWER, 4, ButtonStyle.POWER), Cell(F.CHANNEL_UP, 4, ButtonStyle.STEPPER), Cell(F.CHANNEL_DOWN, 4, ButtonStyle.STEPPER),
         ),
     ),
 
@@ -81,10 +100,10 @@ enum class WidgetLayout(val id: String, val cells: List<Cell>) {
             Cell(F.INPUT, 3), Cell(F.TERRESTRIAL, 3),
             Cell(F.DIGIT_4, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_5, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_6, 2, ButtonStyle.NUMBER),
 
-            Cell(F.VOLUME_UP, 3), Cell(F.CHANNEL_UP, 3),
+            Cell(F.VOLUME_UP, 3, ButtonStyle.STEPPER), Cell(F.CHANNEL_UP, 3, ButtonStyle.STEPPER),
             Cell(F.DIGIT_7, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_8, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_9, 2, ButtonStyle.NUMBER),
 
-            Cell(F.VOLUME_DOWN, 3), Cell(F.CHANNEL_DOWN, 3),
+            Cell(F.VOLUME_DOWN, 3, ButtonStyle.STEPPER), Cell(F.CHANNEL_DOWN, 3, ButtonStyle.STEPPER),
             Cell(F.DIGIT_10, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_11, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_12, 2, ButtonStyle.NUMBER),
         ),
     ),
@@ -106,8 +125,8 @@ enum class WidgetLayout(val id: String, val cells: List<Cell>) {
             Cell(F.DIGIT_7, 4, ButtonStyle.NUMBER), Cell(F.DIGIT_8, 4, ButtonStyle.NUMBER), Cell(F.DIGIT_9, 4, ButtonStyle.NUMBER),
             Cell(F.DIGIT_10, 4, ButtonStyle.NUMBER), Cell(F.DIGIT_11, 4, ButtonStyle.NUMBER), Cell(F.DIGIT_12, 4, ButtonStyle.NUMBER),
 
-            Cell(F.VOLUME_UP, 4), Cell(F.GUIDE, 4), Cell(F.CHANNEL_UP, 4),
-            Cell(F.VOLUME_DOWN, 4), Cell(F.PROGRAM_INFO, 4), Cell(F.CHANNEL_DOWN, 4),
+            Cell(F.VOLUME_UP, 4, ButtonStyle.STEPPER), Cell(F.GUIDE, 4), Cell(F.CHANNEL_UP, 4, ButtonStyle.STEPPER),
+            Cell(F.VOLUME_DOWN, 4, ButtonStyle.STEPPER), Cell(F.PROGRAM_INFO, 4), Cell(F.CHANNEL_DOWN, 4, ButtonStyle.STEPPER),
 
             Cell(F.COLOR_BLUE, 3, ButtonStyle.COLOR_BLUE), Cell(F.COLOR_RED, 3, ButtonStyle.COLOR_RED),
             Cell(F.COLOR_GREEN, 3, ButtonStyle.COLOR_GREEN), Cell(F.COLOR_YELLOW, 3, ButtonStyle.COLOR_YELLOW),

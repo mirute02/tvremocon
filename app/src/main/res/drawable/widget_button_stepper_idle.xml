@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Generated. Shape carries meaning: steppers are square, digits and the power key are round.
+  Every style also has an `_idle` twin, worn while the widget is resting so a stray touch is
+  visibly not a button press.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_idle" />
+    <corners android:radius="3dp" />
+</shape>

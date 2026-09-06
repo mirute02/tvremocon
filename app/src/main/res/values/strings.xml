@@ -2,6 +2,7 @@
     <string name="app_name">TV Remocon</string>
     <string name="widget_description">Tapo ハブ経由でテレビを操作するリモコン</string>
     <string name="widget_tap_to_setup">タップして設定</string>
+    <string name="widget_resting">タップして起動</string>
 
     <!-- Widget status line. The only feedback a RemoteViews can give. -->
     <string name="status_sending">送信中: %1$s</string>

@@ -37,6 +37,20 @@ class Settings(context: Context) {
 
     // ------------------------------------------------------------------ per-widget
 
+    /**
+     * When this widget's armed window ends, on the monotonic clock.
+     *
+     * A widget lives under a thumb, so it rests dimmed and takes one tap to wake. The
+     * deadline is stored rather than held in memory because the widget's process is killed
+     * between presses; elapsedRealtime is used so changing the wall clock cannot arm it.
+     */
+    fun armedUntil(appWidgetId: Int): Long =
+        prefs.getLong(keyArmed(appWidgetId), 0L)
+
+    fun setArmedUntil(appWidgetId: Int, elapsedRealtime: Long) {
+        prefs.edit().putLong(keyArmed(appWidgetId), elapsedRealtime).apply()
+    }
+
     fun remoteDeviceId(appWidgetId: Int): String? =
         prefs.getString(keyRemote(appWidgetId), null)
 
@@ -85,10 +99,12 @@ class Settings(context: Context) {
         val edit = prefs.edit()
             .remove(keyRemote(appWidgetId))
             .remove(keyRemoteName(appWidgetId))
+            .remove(keyArmed(appWidgetId))
         WidgetLayout.entries.forEach { edit.remove(keySlots(appWidgetId, it)) }
         edit.apply()
     }
 
+    private fun keyArmed(id: Int) = "widget.$id.armed_until"
     private fun keyRemote(id: Int) = "widget.$id.remote"
     private fun keyRemoteName(id: Int) = "widget.$id.remote_name"
     /**

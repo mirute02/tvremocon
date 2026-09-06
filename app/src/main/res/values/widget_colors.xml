@@ -1,14 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Taken from the remote it replaces: a near-black body, dark grey keys, a red power key,
-     and the four coloured programme keys in their standard Japanese order. -->
+<!--
+  Taken from the remote this replaces: a near-black body and dark grey keys.
+
+  Three groups are deliberately distinct. Steppers (volume, channel) are the most muted of
+  the lot — they are pressed repeatedly and by feel, so the loudest colour would be on the
+  least deliberate keys. The channel digits are blue-tinted so the pad reads as one block.
+  The power key is the only red thing on the widget.
+-->
 <resources>
     <color name="widget_background">#F00B0D0F</color>
+
     <color name="widget_button">#FF2A2F35</color>
     <color name="widget_button_pressed">#FF4A90D9</color>
-    <color name="widget_button_number">#FF3A4148</color>
+    <color name="widget_button_text">#FFF2F4F5</color>
+
+    <!-- Muted, and a softer label to match. -->
+    <color name="widget_stepper">#FF1C2126</color>
+    <color name="widget_stepper_pressed">#FF3A6C9E</color>
+    <color name="widget_stepper_text">#FFA8B4BE</color>
+
+    <!-- Blue-tinted so the 1-12 pad is its own group at a glance. -->
+    <color name="widget_number">#FF20364A</color>
+    <color name="widget_number_pressed">#FF3D7FB8</color>
+    <color name="widget_number_text">#FFDCEAF5</color>
+
     <color name="widget_button_dpad">#FF343B42</color>
     <color name="widget_button_ok">#FF454D55</color>
-    <color name="widget_button_text">#FFF2F4F5</color>
     <color name="widget_status_text">#FF8A98A3</color>
 
     <color name="widget_power">#FFD32027</color>
@@ -20,4 +37,8 @@
     <color name="widget_green">#FF1E9E52</color>
     <color name="widget_yellow">#FFE0B01A</color>
     <color name="widget_color_text">#FFFFFFFF</color>
+
+    <!-- Resting state: present enough to read, plainly not armed. -->
+    <color name="widget_idle">#FF15181B</color>
+    <color name="widget_idle_text">#FF4E585F</color>
 </resources>

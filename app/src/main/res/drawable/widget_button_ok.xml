@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 決定, the round centre of the d-pad. -->
+<!--
+  Generated. Shape carries meaning: steppers are square, digits and the power key are round.
+  Every style also has an `_idle` twin, worn while the widget is resting so a stray touch is
+  visibly not a button press.
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
