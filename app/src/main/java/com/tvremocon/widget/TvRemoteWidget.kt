@@ -147,11 +147,16 @@ class TvRemoteWidget : AppWidgetProvider() {
         settings: Settings,
         appWidgetId: Int,
     ) {
+        val enteredAt = SystemClock.elapsedRealtime()
+        Log.d(TAG, "hold widget=$appWidgetId waiting ${settings.armedUntil(appWidgetId) - enteredAt}ms")
         while (true) {
             val remaining = settings.armedUntil(appWidgetId) - SystemClock.elapsedRealtime()
             if (remaining <= 0) break
             delay(remaining)
         }
+        // If this line never appears, the process was frozen or killed before the window
+        // closed, and the widget is still showing its armed colours while resting.
+        Log.d(TAG, "hold widget=$appWidgetId resting after ${SystemClock.elapsedRealtime() - enteredAt}ms")
         render(context, manager, appWidgetId)
     }
 
@@ -234,11 +239,15 @@ class TvRemoteWidget : AppWidgetProvider() {
         private const val ACTION_ARM = "com.tvremocon.ARM"
 
         /**
-         * How long one tap keeps the widget live. Long enough to change the channel and
-         * adjust the volume without waking it again, short enough that a widget left under a
-         * thumb goes back to sleep before the next accidental touch.
+         * How long one tap keeps the widget live.
+         *
+         * Five seconds is not only a taste decision. This device's vendor power management
+         * freezes the app about six seconds after it drops to the background — its own logs
+         * show `FZ ... reason: Bg` that soon after an unfreeze — and a frozen process runs no
+         * code, so a longer window would expire while the widget was still painted as armed.
+         * Staying inside that margin is what makes the resting repaint actually happen.
          */
-        private const val ARMED_WINDOW_MS = 12_000L
+        private const val ARMED_WINDOW_MS = 5_000L
 
         /**
          * How long a view holds its pressed state after the finger lifts. Android keeps it

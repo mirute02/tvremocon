@@ -278,7 +278,9 @@ public class KlapProbe {
         String user = System.getenv("TAPO_USER");
         String pass = System.getenv("TAPO_PASS");
         if (user == null || pass == null) {
-            // Fallback: ~/.tvremocon_credentials, line 1 = email, line 2 = password (chmod 600, outside the repo)
+            // Optional fallback for repeated runs: ~/.tvremocon_credentials, line 1 = email,
+            // line 2 = password. Outside the repo and chmod 600, but still a password in the
+            // clear — prefer the environment variables and let the shell forget them.
             Path f = Path.of(System.getProperty("user.home"), ".tvremocon_credentials");
             try {
                 List<String> lines = Files.readAllLines(f, StandardCharsets.UTF_8);
