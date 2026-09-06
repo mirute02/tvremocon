@@ -12,11 +12,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Call
+import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.PortUnreachableException
 import java.security.GeneralSecurityException
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -98,8 +102,18 @@ class KlapTransport(
                     .post(encrypted.body.toRequestBody(OCTET_STREAM))
                     .build()
             )
+        } catch (e: ConnectException) {
+            // No TCP connection was ever established, so nothing was transmitted. Saying
+            // "outcome unknown" here would be needlessly pessimistic and would block the
+            // rediscovery path that handles a moved hub.
+            throw HubUnreachableException("could not connect for seq ${encrypted.seq}", e)
+        } catch (e: NoRouteToHostException) {
+            throw HubUnreachableException("no route for seq ${encrypted.seq}", e)
+        } catch (e: PortUnreachableException) {
+            throw HubUnreachableException("port unreachable for seq ${encrypted.seq}", e)
         } catch (e: IOException) {
-            // The bytes left this device; whether the hub acted on them is unknowable.
+            // Anything else — a read timeout in particular — happened at or after the write.
+            // The bytes may have left this device; whether the hub acted on them is unknowable.
             throw HubResponseLostException("no response after sending seq ${encrypted.seq}", e)
         }
 
@@ -200,6 +214,15 @@ class KlapTransport(
         fun httpClient(socketFactory: javax.net.SocketFactory): OkHttpClient =
             OkHttpClient.Builder()
                 .socketFactory(socketFactory)
+                // No connection reuse. The hub drops idle sockets after a few seconds, and a
+                // pooled one that has already been closed fails the write immediately — seen
+                // in the field as a press that did nothing 11ms after the tap. OkHttp would
+                // normally paper over that by reconnecting, but retryOnConnectionFailure has
+                // to stay off: it cannot tell a socket that was never usable from one that
+                // died after the request went out, and guessing wrong resends an IR command.
+                // Opening a fresh connection each time costs a TCP handshake on the LAN and
+                // removes the whole failure mode.
+                .connectionPool(ConnectionPool(0, 1, java.util.concurrent.TimeUnit.NANOSECONDS))
                 .retryOnConnectionFailure(false)
                 .followRedirects(false)
                 .followSslRedirects(false)

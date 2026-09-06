@@ -3,6 +3,7 @@ package com.tvremocon.transport.klap
 import com.tvremocon.net.HubEndpoint
 import com.tvremocon.transport.HubAuthException
 import com.tvremocon.transport.HubResponseLostException
+import com.tvremocon.transport.HubUnreachableException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -94,6 +95,38 @@ class KlapTransportTest {
         // Even with allowRetry, a lost response is never replayed — the distinction the
         // transport draws is "may already have been delivered", and that applies to gets too.
         assertEquals(1, hub.requestCount.get())
+    }
+
+    @Test
+    fun `a closed port is unreachable, not a lost response`() = runBlocking {
+        // The stale-pooled-connection failure seen in the field looked like this: the write
+        // fails within milliseconds because no connection was ever usable. Nothing was
+        // transmitted, so calling it "outcome unknown" would be wrong and would block the
+        // rediscovery path.
+        val closed = ServerSocket(0).let { probe -> probe.localPort.also { probe.close() } }
+        val transport = KlapTransport(
+            endpoint = HubEndpoint.loopbackForTest(closed),
+            authHash = AUTH_HASH,
+            client = KlapTransport.httpClient(javax.net.SocketFactory.getDefault()),
+        )
+        assertThrows(HubUnreachableException::class.java) {
+            runBlocking { transport.call(IR_SEND, allowRetry = false) }
+        }
+        // Nothing reached the real fake hub either; this port was never listening.
+        assertEquals(0, hub.requestCount.get())
+    }
+
+    @Test
+    fun `consecutive presses succeed after the hub drops the idle connection`() = runBlocking {
+        // Connection reuse is disabled precisely so this works: the fake hub closes every
+        // connection, and the second press must still land rather than failing on a socket
+        // that was already dead.
+        val transport = transport()
+        transport.call("""{"method":"get_device_info"}""", allowRetry = true)
+        transport.call("""{"method":"get_device_info"}""", allowRetry = true)
+        assertEquals(2, hub.requestCount.get())
+        // One handshake, not two: dropping the TCP connection must not drop the KLAP session.
+        assertEquals(1, hub.handshakeCount.get())
     }
 
     @Test
