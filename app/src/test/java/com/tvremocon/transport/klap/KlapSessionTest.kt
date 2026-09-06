@@ -47,6 +47,23 @@ class KlapSessionTest {
     }
 
     @Test
+    fun `a pasted authHash round trips with the derived one`() {
+        val derived = KlapSession.authHash(vectors.getString("username"), vectors.getString("password"))
+        // Setup accepts this instead of the password, so the two paths must agree exactly.
+        assertArrayEquals(derived, KlapSession.parseAuthHash(vectors.getString("auth_hash")))
+        assertArrayEquals(derived, KlapSession.parseAuthHash("  ${vectors.getString("auth_hash").uppercase()}  "))
+        assertArrayEquals(derived, KlapSession.parseAuthHash("0x" + vectors.getString("auth_hash")))
+    }
+
+    @Test
+    fun `anything that is not a 64 character hex string is rejected`() {
+        // Rejected rather than padded or truncated: a silently wrong hash would fail later as
+        // an authentication error, which reads like a wrong password.
+        listOf("", "abc", "z".repeat(64), vectors.getString("auth_hash").drop(1))
+            .forEach { org.junit.Assert.assertNull(it, KlapSession.parseAuthHash(it)) }
+    }
+
+    @Test
     fun `derived key sizes and values match the vectors`() {
         val session = KlapSession(localSeed, remoteSeed, authHash)
         // Sizes are the easiest thing to get wrong: 16 for lsk, 28 — not 32 — for ldk, 12 for the IV prefix.

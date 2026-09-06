@@ -86,6 +86,24 @@ class KlapSession(localSeed: ByteArray, remoteSeed: ByteArray, authHash: ByteArr
         /** Handshake 1 body: the device echoes this back with its own seed and hash. */
         const val SEED_SIZE = 16
 
+        /** Length of an authHash in bytes; 64 characters as hex. */
+        const val AUTH_HASH_SIZE = 32
+
+        /**
+         * Parses an authHash typed or pasted as hex, or null if it is not one.
+         *
+         * Setup accepts this as an alternative to the password. The hub has no local
+         * password of its own — it checks a hash derived from the TP-Link cloud account — so
+         * the account cannot be avoided, but deriving the hash elsewhere means the cloud
+         * password never reaches this app.
+         */
+        fun parseAuthHash(text: String): ByteArray? {
+            val hex = text.trim().removePrefix("0x")
+            if (hex.length != AUTH_HASH_SIZE * 2) return null
+            if (!hex.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) return null
+            return ByteArray(AUTH_HASH_SIZE) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+        }
+
         /** `SHA256( SHA1(username) || SHA1(password) )`. Password-equivalent — never log it. */
         fun authHash(username: String, password: String): ByteArray =
             sha256(

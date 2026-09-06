@@ -48,6 +48,7 @@ class WidgetSetupActivity : AppCompatActivity() {
     private lateinit var host: EditText
     private lateinit var email: EditText
     private lateinit var password: EditText
+    private lateinit var authHashInput: EditText
     private lateinit var content: LinearLayout
 
     private val requestPermission =
@@ -95,6 +96,12 @@ class WidgetSetupActivity : AppCompatActivity() {
             hint = getString(com.tvremocon.R.string.setup_hint_password)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
+        // The alternative to typing the cloud password at all: derive the hash elsewhere
+        // (tools/KlapProbe.java hash) and paste it. Takes precedence when filled in.
+        authHashInput = EditText(this).apply {
+            hint = getString(com.tvremocon.R.string.setup_hint_authhash)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val discover = Button(this).apply {
@@ -114,7 +121,7 @@ class WidgetSetupActivity : AppCompatActivity() {
                     LinearLayout(this@WidgetSetupActivity).apply {
                         orientation = LinearLayout.VERTICAL
                         setPadding(dp(16), dp(16), dp(16), dp(16))
-                        listOf<View>(status, host, discover, email, password, connect, content)
+                        listOf<View>(status, host, discover, email, password, authHashInput, connect, content)
                             .forEach(::addView)
                     }
                 )
@@ -158,20 +165,29 @@ class WidgetSetupActivity : AppCompatActivity() {
             status.text = getString(com.tvremocon.R.string.setup_bad_host)
             return
         }
-        val user = email.text.toString().trim()
-        val pass = password.text.toString()
-        if (user.isEmpty() || pass.isEmpty()) {
-            status.text = getString(com.tvremocon.R.string.setup_need_credentials)
-            return
+        val pastedHash = authHashInput.text.toString()
+        val authHash = when {
+            pastedHash.isNotBlank() -> KlapSession.parseAuthHash(pastedHash) ?: run {
+                status.text = getString(com.tvremocon.R.string.setup_bad_authhash)
+                return
+            }
+            else -> {
+                val user = email.text.toString().trim()
+                val pass = password.text.toString()
+                if (user.isEmpty() || pass.isEmpty()) {
+                    status.text = getString(com.tvremocon.R.string.setup_need_credentials)
+                    return
+                }
+                // Derive once and drop the password: it is never stored, and nothing after
+                // this point needs it.
+                KlapSession.authHash(user, pass)
+            }
         }
 
         status.text = getString(com.tvremocon.R.string.setup_connecting, endpoint.toString())
         content.removeAllViews()
 
         lifecycleScope.launch {
-            // Derive the hash and drop the password: it is never stored, and nothing after
-            // this point needs it.
-            val authHash = KlapSession.authHash(user, pass)
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
                     val hub = TapoIrHub(

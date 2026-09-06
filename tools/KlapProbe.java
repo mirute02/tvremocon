@@ -6,6 +6,7 @@
 //   info     --host H                    handshake (verifies credentials) + get_device_info
 //   remotes  --host H                    ir.remote children + key_list -> tools/fixtures/remotes.json
 //   send     --host H --device-id ID --key NAME [--no-batch]
+//   hash                                 print the authHash, so the app never sees the password
 //   vectors                              deterministic KLAP test vectors from fake credentials
 //
 // Credentials come from TAPO_USER / TAPO_PASS. Username is trimmed, case preserved.
@@ -468,6 +469,23 @@ public class KlapProbe {
         return r == null ? null : findResponses(r);
     }
 
+    /**
+     * Prints the authHash for the stored credentials.
+     *
+     * The hub has no local password of its own — it checks a hash derived from the TP-Link
+     * cloud account — so the account cannot be avoided. What can be avoided is typing that
+     * password into the remote app: derive the hash once here, paste it into setup, and the
+     * password never reaches the app at all.
+     *
+     * The hash is password-equivalent for KLAP, and its derivation is unsalted and
+     * unstretched, so anyone holding it can brute-force the account password offline. Treat
+     * this output like the password itself.
+     */
+    static void hash(Map<String, String> opts) {
+        System.err.println("WARNING: this value is password-equivalent. Do not paste it into chat or commit it.");
+        System.out.println(hex(credentials(opts)));
+    }
+
     static void vectors() throws Exception {
         byte[] localSeed = new byte[16], remoteSeed = new byte[16];
         for (int i = 0; i < 16; i++) { localSeed[i] = (byte) i; remoteSeed[i] = (byte) (0xA0 + i); }
@@ -513,6 +531,7 @@ public class KlapProbe {
                 case "info" -> info(opts);
                 case "remotes" -> remotes(opts);
                 case "send" -> send(opts);
+                case "hash" -> hash(opts);
                 case "vectors" -> vectors();
                 default -> usage();
             }
@@ -532,6 +551,7 @@ public class KlapProbe {
               info     --host H [--try-lowercase]
               remotes  --host H
               send     --host H --device-id ID --key NAME [--no-batch]
+              hash     [--try-lowercase]
               vectors
             env: TAPO_USER, TAPO_PASS""");
     }

@@ -22,13 +22,15 @@
     <string name="setup_hint_host">ハブの IP アドレス（例 192.168.1.4）</string>
     <string name="setup_hint_email">TP-Link のメールアドレス（大文字小文字はそのまま）</string>
     <string name="setup_hint_password">パスワード</string>
+    <string name="setup_hint_authhash">または authHash（64桁の16進）を貼り付け</string>
     <string name="setup_discover">ハブを探す</string>
     <string name="setup_connect">接続してリモコンを選ぶ</string>
     <string name="setup_searching">LAN を探索中…</string>
     <string name="setup_none_found">見つかりませんでした。IP を直接入力してください</string>
     <string name="setup_found">候補: %1$s</string>
     <string name="setup_bad_host">プライベート IPv4 アドレスを入力してください</string>
-    <string name="setup_need_credentials">メールアドレスとパスワードを入力してください</string>
+    <string name="setup_need_credentials">メールアドレスとパスワード、または authHash を入力してください</string>
+    <string name="setup_bad_authhash">authHash は 64 桁の16進で入力してください</string>
     <string name="setup_connecting">%1$s に接続中…</string>
     <string name="setup_not_a_hub">%1$s は IR ハブではありません</string>
     <string name="setup_pick_remote">%1$s (%2$s)\n使えるリモコン %3$d 件。選んでください</string>
