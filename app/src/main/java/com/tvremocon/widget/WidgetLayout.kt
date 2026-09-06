@@ -35,27 +35,57 @@ data class Cell(
 )
 
 /**
- * The button grids, laid out like the physical remote they replace.
+ * The three button grids, chosen by the space the launcher gives the widget.
  *
- * A twelve-column grid because that is the smallest number divisible by both 3 and 4: the
- * number pad and most rows are three across, the coloured keys are four across, and the top
- * row is four across. Every cell spans 3 or 4 columns.
+ * An app cannot resize its own widget — AppWidgetManager only lets a launcher report the
+ * size it has allocated, never the reverse — so "small usually, big when needed" is a
+ * placement decision. What this can do is make every shape worth having: shrink the widget
+ * and it becomes a three-key strip, stretch it sideways and the channel pad appears beside a
+ * short menu, make it tall and it is the whole remote.
  *
- * The two layouts have independent slot numbering — the compact grid is not a prefix of the
- * full one, since the buttons worth keeping when space is short are scattered across the
- * full remote rather than gathered at the top. Assignments are therefore stored per layout.
+ * A twelve-column grid throughout, because twelve is the smallest number divisible by both 3
+ * and 4: the number pad and most rows are three across, the coloured keys are four across,
+ * and the wide grid splits 6/6 down the middle.
+ *
+ * Slot indices are positional and permanent within a layout, and the three do not share
+ * numbering — slot 1 is a channel key in one and a digit in another.
  */
 enum class WidgetLayout(val id: String, val cells: List<Cell>) {
 
-    /** Cover screen and small placements: power, volume, channel, and the d-pad. */
+    /**
+     * The smallest useful strip: power and channel, nothing else.
+     *
+     * No d-pad here. A row of arrows on a small widget is both hard to hit and easy to hit by
+     * accident, and the keys that earn a permanent place on a home screen are the ones you
+     * reach for without looking.
+     */
     COMPACT(
         id = "compact",
         cells = listOf(
-            Cell(F.INPUT, 4), Cell(F.MUTE, 4), Cell(F.POWER, 4, ButtonStyle.POWER),
-            Cell(F.VOLUME_UP, 4), Cell(F.UP, 4, ButtonStyle.DPAD), Cell(F.CHANNEL_UP, 4),
-            Cell(F.LEFT, 4, ButtonStyle.DPAD), Cell(F.OK, 4, ButtonStyle.OK), Cell(F.RIGHT, 4, ButtonStyle.DPAD),
-            Cell(F.VOLUME_DOWN, 4), Cell(F.DOWN, 4, ButtonStyle.DPAD), Cell(F.CHANNEL_DOWN, 4),
-            Cell(F.BACK, 4), Cell(F.HOME, 4), Cell(F.GUIDE, 4),
+            Cell(F.POWER, 4, ButtonStyle.POWER), Cell(F.CHANNEL_UP, 4), Cell(F.CHANNEL_DOWN, 4),
+        ),
+    ),
+
+    /**
+     * Landscape: a short menu on the left, the 1-12 channel pad on the right.
+     *
+     * Each row is 3 + 3 + 2 + 2 + 2 columns, so the menu takes the left half in two columns
+     * and the digits take the right half in three.
+     */
+    WIDE(
+        id = "wide",
+        cells = listOf(
+            Cell(F.POWER, 3, ButtonStyle.POWER), Cell(F.MUTE, 3),
+            Cell(F.DIGIT_1, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_2, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_3, 2, ButtonStyle.NUMBER),
+
+            Cell(F.INPUT, 3), Cell(F.TERRESTRIAL, 3),
+            Cell(F.DIGIT_4, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_5, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_6, 2, ButtonStyle.NUMBER),
+
+            Cell(F.VOLUME_UP, 3), Cell(F.CHANNEL_UP, 3),
+            Cell(F.DIGIT_7, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_8, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_9, 2, ButtonStyle.NUMBER),
+
+            Cell(F.VOLUME_DOWN, 3), Cell(F.CHANNEL_DOWN, 3),
+            Cell(F.DIGIT_10, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_11, 2, ButtonStyle.NUMBER), Cell(F.DIGIT_12, 2, ButtonStyle.NUMBER),
         ),
     ),
 
@@ -92,12 +122,13 @@ enum class WidgetLayout(val id: String, val cells: List<Cell>) {
 
     val slotCount: Int get() = cells.size
     val defaults: List<F?> get() = cells.map(Cell::function)
+    val rows: Int get() = cells.sumOf(Cell::span) / COLUMNS
 
-    /** View id prefix; the two grids have separate id spaces so neither constrains the other. */
+    /** View id prefix; each grid has its own id space so none constrains the others. */
     fun viewIdName(slot: Int): String = "%s_slot_%02d".format(id, slot)
 
     companion object {
-        /** Divisible by 3 and 4, so both the number pad and the coloured row fit exactly. */
+        /** Divisible by 3 and 4, so the number pad, the coloured row and a 6/6 split all fit. */
         const val COLUMNS = 12
 
         /** Sizes the per-slot PendingIntent request codes. */

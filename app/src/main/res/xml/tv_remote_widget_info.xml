@@ -1,21 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  targetCellWidth/Height ask for a full number-pad-sized widget up front, but the wide resize
-  range is what matters: shrinking it swaps in the compact grid, so "small remote" and "remote
-  with numbers" are the same widget at two sizes rather than two things to install.
+  Three shapes live in one widget, chosen by the size the launcher allocates: a power/channel
+  strip when small, a menu-plus-number-pad when stretched sideways, the whole remote when
+  made tall. An app cannot resize its own widget, so the resize range has to be wide enough
+  that dragging the handles actually reaches all three.
 
-  updatePeriodMillis is 0 because nothing here changes on a timer — the widget redraws when a
-  button is pressed and when setup finishes.
+  It starts at the landscape shape — useful immediately, and not tall enough to cover half a
+  home screen where buttons get pressed by accident.
+
+  updatePeriodMillis is 0 because nothing here changes on a timer; the widget redraws when a
+  button is pressed, when it is resized, and when setup finishes.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:initialLayout="@layout/widget_remote_compact"
+    android:initialLayout="@layout/widget_remote_wide"
     android:minWidth="180dp"
-    android:minHeight="220dp"
-    android:targetCellWidth="3"
-    android:targetCellHeight="6"
-    android:minResizeWidth="140dp"
-    android:minResizeHeight="180dp"
-    android:maxResizeWidth="480dp"
+    android:minHeight="60dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="50dp"
+    android:maxResizeWidth="640dp"
     android:maxResizeHeight="800dp"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"

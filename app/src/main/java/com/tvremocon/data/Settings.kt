@@ -91,12 +91,22 @@ class Settings(context: Context) {
 
     private fun keyRemote(id: Int) = "widget.$id.remote"
     private fun keyRemoteName(id: Int) = "widget.$id.remote_name"
-    private fun keySlots(id: Int, layout: WidgetLayout) = "widget.$id.slots.${layout.id}"
+    /**
+     * Includes a schema version. Slot indices only mean something relative to a particular
+     * grid, so when a grid's cells change — the compact strip dropped its d-pad for power and
+     * channel — stored assignments have to be abandoned rather than reinterpreted. A widget
+     * whose grid comes back empty is treated as needing setup, which is the recovery path.
+     */
+    private fun keySlots(id: Int, layout: WidgetLayout) =
+        "widget.$id.slots.${layout.id}.v$SLOTS_SCHEMA"
 
     private companion object {
         const val NAME = "tvremocon"
         const val KEY_HOST = "host"
         const val KEY_HUB_ID = "hub_device_id"
+
+        /** Bumped whenever any layout's cells change meaning. */
+        const val SLOTS_SCHEMA = 2
     }
 }
 

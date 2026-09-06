@@ -142,10 +142,11 @@ class TvRemoteWidget : AppWidgetProvider() {
 
     private fun setStatus(context: Context, manager: AppWidgetManager, appWidgetId: Int, text: String) {
         // Redrawing the whole widget would rebuild every PendingIntent for a status change.
-        val compact = RemoteViews(context.packageName, R.layout.widget_remote_compact)
-        val full = RemoteViews(context.packageName, R.layout.widget_remote_full)
-        listOf(compact, full).forEach { it.setTextViewText(R.id.status, text) }
-        manager.partiallyUpdateAppWidget(appWidgetId, sized(compact, full))
+        val views = WidgetLayout.entries.associateWith { layout ->
+            RemoteViews(context.packageName, layoutResource(layout))
+                .apply { setTextViewText(R.id.status, text) }
+        }
+        manager.partiallyUpdateAppWidget(appWidgetId, sized(views))
     }
 
     companion object {
@@ -175,22 +176,28 @@ class TvRemoteWidget : AppWidgetProvider() {
             val settings = Settings(context)
             val configured = settings.isConfigured && settings.remoteDeviceId(appWidgetId) != null
 
-            val compact = build(context, appWidgetId, WidgetLayout.COMPACT, settings, configured)
-            val full = build(context, appWidgetId, WidgetLayout.FULL, settings, configured)
-            manager.updateAppWidget(appWidgetId, sized(compact, full))
+            val views = WidgetLayout.entries.associateWith {
+                build(context, appWidgetId, it, settings, configured)
+            }
+            manager.updateAppWidget(appWidgetId, sized(views))
         }
 
         /**
-         * Lets the launcher pick the grid from the space it actually allocates, rather than
-         * this code guessing from screen names. A Fold's cover and inner screens then each get
-         * a sensible grid without knowing anything about folding.
+         * Lets the launcher pick the grid from the space it actually allocates.
+         *
+         * The three shapes are deliberately far apart so the choice is unambiguous: a short
+         * strip, something wide but not tall, and something tall. Resizing the widget is how
+         * the user moves between them — an app cannot resize its own widget — and a Fold's
+         * cover and inner screens each get a sensible grid without this code knowing anything
+         * about folding.
          */
-        private fun sized(compact: RemoteViews, full: RemoteViews): RemoteViews =
+        private fun sized(views: Map<WidgetLayout, RemoteViews>): RemoteViews =
             RemoteViews(
-                mapOf(
-                    SizeF(140f, 180f) to compact,
-                    SizeF(160f, 380f) to full,
-                )
+                buildMap {
+                    views[WidgetLayout.COMPACT]?.let { put(SizeF(120f, 56f), it) }
+                    views[WidgetLayout.WIDE]?.let { put(SizeF(300f, 150f), it) }
+                    views[WidgetLayout.FULL]?.let { put(SizeF(150f, 340f), it) }
+                }
             )
 
         private fun build(
@@ -241,6 +248,7 @@ class TvRemoteWidget : AppWidgetProvider() {
 
         private fun layoutResource(layout: WidgetLayout): Int = when (layout) {
             WidgetLayout.COMPACT -> R.layout.widget_remote_compact
+            WidgetLayout.WIDE -> R.layout.widget_remote_wide
             WidgetLayout.FULL -> R.layout.widget_remote_full
         }
 
