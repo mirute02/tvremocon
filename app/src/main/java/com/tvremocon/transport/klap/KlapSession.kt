@@ -1,0 +1,113 @@
+package com.tvremocon.transport.klap
+
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
+
+/**
+ * KLAP v2 record layer: key derivation, encryption, decryption.
+ *
+ * Pure JVM on purpose — no Android imports — so it runs under plain `testDebugUnitTest`
+ * against the vectors in tools/klap_vectors.json.
+ *
+ * **Not thread-safe, and cannot be made so by adding a lock here.** [seq] advances on every
+ * [encrypt] and [decrypt] reuses it, so a request and its response are a single indivisible
+ * operation. Serialising is the caller's job; KlapTransport holds a mutex across the whole
+ * exchange.
+ */
+class KlapSession(localSeed: ByteArray, remoteSeed: ByteArray, authHash: ByteArray) {
+
+    private val key: ByteArray = derive("lsk", localSeed, remoteSeed, authHash).copyOf(16)
+    private val signingKey: ByteArray = derive("ldk", localSeed, remoteSeed, authHash).copyOf(28)
+    private val ivPrefix: ByteArray
+    private var sequence: Int
+
+    /** The sequence number the next [encrypt] will use is this plus one. */
+    val seq: Int get() = sequence
+
+    init {
+        val fullIv = derive("iv", localSeed, remoteSeed, authHash)
+        ivPrefix = fullIv.copyOf(12)
+        // Signed, big-endian, and it really can be negative — do not widen to unsigned.
+        sequence = ByteBuffer.wrap(fullIv, 28, 4).int
+    }
+
+    /**
+     * Advances [seq], then returns `signature || ciphertext` ready to POST, paired with the
+     * sequence number to put in the query string.
+     */
+    fun encrypt(plaintext: ByteArray): Encrypted {
+        sequence += 1
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv()))
+        }
+        val ciphertext = cipher.doFinal(plaintext)
+        val signature = sha256(signingKey, int32be(sequence), ciphertext)
+        return Encrypted(signature + ciphertext, sequence)
+    }
+
+    /**
+     * Strips the leading 32-byte signature and decrypts with the sequence number of the
+     * request this is a response to.
+     *
+     * Throws [IllegalArgumentException] for a truncated payload and
+     * [javax.crypto.BadPaddingException] for a body that does not decrypt — note that
+     * neither is an IOException, which is what makes the stale-session case easy to miss.
+     */
+    fun decrypt(payload: ByteArray): ByteArray {
+        require(payload.size > SIGNATURE_SIZE) {
+            "response is ${payload.size} bytes, shorter than the signature"
+        }
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv()))
+        }
+        return cipher.doFinal(payload, SIGNATURE_SIZE, payload.size - SIGNATURE_SIZE)
+    }
+
+    private fun iv(): ByteArray = ivPrefix + int32be(sequence)
+
+    private fun derive(label: String, vararg parts: ByteArray): ByteArray =
+        sha256(label.toByteArray(Charsets.UTF_8), *parts)
+
+    data class Encrypted(val body: ByteArray, val seq: Int) {
+        // ByteArray identity would make these compare by reference; content is what matters.
+        override fun equals(other: Any?): Boolean =
+            this === other || (other is Encrypted && seq == other.seq && body.contentEquals(other.body))
+
+        override fun hashCode(): Int = 31 * body.contentHashCode() + seq
+    }
+
+    companion object {
+        private const val TRANSFORMATION = "AES/CBC/PKCS5Padding"
+        private const val SIGNATURE_SIZE = 32
+
+        /** Handshake 1 body: the device echoes this back with its own seed and hash. */
+        const val SEED_SIZE = 16
+
+        /** `SHA256( SHA1(username) || SHA1(password) )`. Password-equivalent — never log it. */
+        fun authHash(username: String, password: String): ByteArray =
+            sha256(
+                sha1(username.toByteArray(Charsets.UTF_8)),
+                sha1(password.toByteArray(Charsets.UTF_8)),
+            )
+
+        /** What handshake1's response must contain for the credentials to be right. */
+        fun expectedDeviceHash(localSeed: ByteArray, remoteSeed: ByteArray, authHash: ByteArray): ByteArray =
+            sha256(localSeed, remoteSeed, authHash)
+
+        /** Handshake 2 body. Note the seeds are in the opposite order to handshake 1. */
+        fun handshake2Body(localSeed: ByteArray, remoteSeed: ByteArray, authHash: ByteArray): ByteArray =
+            sha256(remoteSeed, localSeed, authHash)
+
+        fun sha256(vararg parts: ByteArray): ByteArray = digest("SHA-256", parts)
+
+        private fun sha1(vararg parts: ByteArray): ByteArray = digest("SHA-1", parts)
+
+        private fun digest(algorithm: String, parts: Array<out ByteArray>): ByteArray =
+            MessageDigest.getInstance(algorithm).apply { parts.forEach { update(it) } }.digest()
+
+        fun int32be(value: Int): ByteArray = ByteBuffer.allocate(4).putInt(value).array()
+    }
+}

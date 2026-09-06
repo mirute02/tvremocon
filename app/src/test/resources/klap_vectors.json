@@ -1,0 +1,17 @@
+{
+  "sig_key": "9b298cab71157ab746cc568f4e140086aaa04259e01cfa73762f1f29",
+  "note": "fake credentials, fixed seeds; safe to commit",
+  "ciphertext": "256598585e1f6007efcd3d2fe5c258faccc6e23b8b2d5700b00f647195b08ead",
+  "iv_prefix": "ac0b38708f36ab6250018dab",
+  "signature": "bd75204a5c4515bbefa23c9628ddf463eed61f4cf060bd9cc59d295da88ba0a7",
+  "auth_hash": "a45b570eb50ef2a8999a5e416a9976ab8617f96f90b51def7eaae530f9b717b9",
+  "seq_first_request": 83928073,
+  "handshake2_body": "a0053e1d1896f4dfedc6daf26f57b44798bf65575e4c58b5d454bd6d7d5fa8e3",
+  "plaintext": "{\"method\":\"get_device_info\"}",
+  "local_seed": "000102030405060708090a0b0c0d0e0f",
+  "password": "pw",
+  "remote_seed": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+  "key": "3b604b286f4127e9ac7ba1d14eab5465",
+  "username": "user@example.com",
+  "seq_initial": 83928072
+}

@@ -27,6 +27,9 @@ android {
     buildFeatures {
         viewBinding true
     }
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 kotlin {
@@ -44,4 +47,9 @@ dependencies {
     // retryOnConnectionFailure(false) is why this is here rather than HttpURLConnection:
     // an IR send must never be replayed by the HTTP layer. See docs/phase0-findings.md.
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    testImplementation 'junit:junit:4.13.2'
+    // Real JSONObject: the app's error walk depends on org.json semantics, and the
+    // android.jar stub throws on every call under unit tests.
+    testImplementation 'org.json:json:20250517'
 }
