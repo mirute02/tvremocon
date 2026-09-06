@@ -6,6 +6,26 @@ An Android home-screen widget that drives a TV through a TP-Link Tapo infrared h
 traffic stays on the LAN; nothing goes through the cloud. **Written, built and released
 entirely on the phone, in Termux.**
 
+<p>
+  <img src="docs/images/icon.png" alt="App icon" width="120">
+</p>
+
+<p>
+  <img src="docs/images/widget-wide-armed.png" alt="Landscape widget, awake" width="420"><br>
+  <sub>Landscape: a short menu on the left, the channel pad on the right</sub>
+</p>
+
+<p>
+  <img src="docs/images/widget-wide-resting.png" alt="Landscape widget, resting" width="420"><br>
+  <sub>It rests dimmed and takes one tap to wake</sub>
+</p>
+
+<p>
+  <img src="docs/images/widget-full-armed.png" alt="Full remote, awake" width="220">
+  <img src="docs/images/widget-full-resting.png" alt="Full remote, resting" width="220"><br>
+  <sub>Stretched tall it becomes the whole 41-key remote. Resting on the right</sub>
+</p>
+
 ## What it does
 
 Pressing a key on the widget sends an IR command from the hub. The Tapo app never has to be

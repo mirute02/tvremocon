@@ -5,6 +5,26 @@
 Android のホーム画面ウィジェットから、TP-Link Tapo の赤外線ハブ経由でテレビを操作する。
 通信は LAN 内で完結し、クラウドを経由しない。**開発からビルドまで Termux 上の端末だけで完結している。**
 
+<p>
+  <img src="docs/images/icon.png" alt="アプリアイコン" width="120">
+</p>
+
+<p>
+  <img src="docs/images/widget-wide-armed.png" alt="横長ウィジェット（起動中）" width="420"><br>
+  <sub>横長。左に最小メニュー、右にチャンネル数字</sub>
+</p>
+
+<p>
+  <img src="docs/images/widget-wide-resting.png" alt="横長ウィジェット（休止中）" width="420"><br>
+  <sub>普段は沈んでいて、1タップで起動する</sub>
+</p>
+
+<p>
+  <img src="docs/images/widget-full-armed.png" alt="フルリモコン（起動中）" width="220">
+  <img src="docs/images/widget-full-resting.png" alt="フルリモコン（休止中）" width="220"><br>
+  <sub>縦に伸ばすと41キーのフルリモコン。右は休止中</sub>
+</p>
+
 ## できること
 
 ホーム画面のウィジェットを押すと、ハブから赤外線が飛ぶ。Tapo アプリを開く必要はない。
