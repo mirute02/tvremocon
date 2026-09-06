@@ -89,8 +89,11 @@ class TvRemoteWidget : AppWidgetProvider() {
         val settings = Settings(context)
         val assignment = settings.slots(appWidgetId, layout)[slot] ?: return
         val manager = AppWidgetManager.getInstance(context)
+        val startedAt = SystemClock.elapsedRealtime()
 
-        setStatus(context, manager, appWidgetId, context.getString(R.string.status_sending, assignment.label))
+        // No "sending" update: it costs a full RemoteViews build and an IPC round trip
+        // before the request even starts, which is pure latency on the one path that has to
+        // feel immediate. The button's own pressed state is the acknowledgement.
 
         val remaining = deadline - SystemClock.elapsedRealtime()
         val result = if (remaining <= 0) {
@@ -107,7 +110,10 @@ class TvRemoteWidget : AppWidgetProvider() {
             } ?: SendResult.Unknown(context.getString(R.string.status_timed_out))
         }
 
-        Log.i(TAG, "widget=$appWidgetId ${layout.id}/$slot ${assignment.label} -> $result")
+        // One line per tap. Two lines for one physical press would mean the launcher
+        // delivered the click twice; a large elapsed time points at the transport instead.
+        Log.i(TAG, "press widget=$appWidgetId ${layout.id}/$slot ${assignment.label} " +
+            "-> $result in ${SystemClock.elapsedRealtime() - startedAt}ms")
         setStatus(context, manager, appWidgetId, describe(context, assignment, result))
     }
 

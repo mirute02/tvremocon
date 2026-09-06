@@ -1,6 +1,7 @@
 package com.tvremocon.transport.klap
 
 import android.os.SystemClock
+import android.util.Log
 import com.tvremocon.net.HubEndpoint
 import com.tvremocon.transport.HubAuthException
 import com.tvremocon.transport.HubResponseLostException
@@ -84,7 +85,9 @@ class KlapTransport(
 
     /** One attempt. Establishing a session first is not a retry. */
     private fun exchange(json: String): String {
-        val active = session?.takeIf { isFresh() } ?: handshake()
+        val cached = session?.takeIf { isFresh() }
+        val active = cached ?: handshake()
+        val sentAt = elapsedRealtime()
         val encrypted = active.encrypt(json.toByteArray(Charsets.UTF_8))
 
         val response = try {
@@ -107,12 +110,16 @@ class KlapTransport(
         if (response.code != 200) {
             throw IOException("hub returned HTTP ${response.code} for seq ${encrypted.seq}")
         }
+        // seq is logged so a duplicate request is visible as two sequence numbers for one tap.
+        Log.d(TAG, "request seq=${encrypted.seq} handshaked=${cached == null} " +
+            "${elapsedRealtime() - sentAt}ms")
         return String(active.decrypt(response.body), Charsets.UTF_8)
     }
 
     private fun isFresh(): Boolean = elapsedRealtime() - sessionStartedAt < sessionLifetimeMs
 
     private fun handshake(): KlapSession {
+        val startedAt = elapsedRealtime()
         val localSeed = ByteArray(KlapSession.SEED_SIZE).also(random::nextBytes)
 
         // A transport failure here happened before any application request was built, so the
@@ -156,6 +163,10 @@ class KlapTransport(
             session = it
             sessionCookie = cookie
             sessionStartedAt = elapsedRealtime()
+            // Two extra round trips. If this shows up on most presses the process is being
+            // killed between them, which is the difference between a snappy and a sluggish
+            // button.
+            Log.d(TAG, "handshake took ${sessionStartedAt - startedAt}ms")
         }
     }
 
@@ -173,6 +184,7 @@ class KlapTransport(
     private class Http(val code: Int, val body: ByteArray, val setCookies: List<String>)
 
     companion object {
+        private const val TAG = "TvRemocon"
         private val OCTET_STREAM = "application/octet-stream".toMediaType()
         private const val SESSION_COOKIE_PREFIX = "TP_SESSIONID="
         private const val HANDSHAKE1_SIZE = 48
