@@ -35,6 +35,16 @@ class Settings(context: Context) {
 
     val isConfigured: Boolean get() = host != null && hubDeviceId != null
 
+    /**
+     * When the last automatic sweep for a moved hub ran, on the monotonic clock.
+     *
+     * Belongs to the hub rather than to a widget: the scan looks for one piece of hardware,
+     * and three widgets failing at once should not mean three sweeps.
+     */
+    var lastRediscoveryAt: Long
+        get() = prefs.getLong(KEY_LAST_REDISCOVERY, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_REDISCOVERY, value).apply()
+
     // ------------------------------------------------------------------ per-widget
 
     /**
@@ -142,6 +152,7 @@ class Settings(context: Context) {
         const val NAME = "tvremocon"
         const val KEY_HOST = "host"
         const val KEY_HUB_ID = "hub_device_id"
+        const val KEY_LAST_REDISCOVERY = "last_rediscovery_at"
 
         /** Bumped whenever any layout's cells change meaning. */
         const val SLOTS_SCHEMA = 2

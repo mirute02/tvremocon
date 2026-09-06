@@ -29,6 +29,9 @@ object HubDiscovery {
 
     suspend fun scan(network: Network): List<Candidate> = withContext(Dispatchers.IO) {
         val prefix = subnetPrefix(network) ?: return@withContext emptyList()
+        // Worth a line: this touches every address on the subnet, so it should be possible to
+        // see from a log how often it happens.
+        android.util.Log.i("TvRemocon", "sweeping the local subnet for hubs")
         coroutineScope {
             (1..254)
                 .map { last -> async { probe(network, prefix + last) } }

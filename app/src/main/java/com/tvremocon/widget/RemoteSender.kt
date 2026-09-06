@@ -2,6 +2,7 @@ package com.tvremocon.widget
 
 import android.content.Context
 import android.net.Network
+import android.os.SystemClock
 import android.util.Log
 import com.tvremocon.data.SecretStore
 import com.tvremocon.data.Settings
@@ -10,6 +11,7 @@ import com.tvremocon.ir.TapoIrHub
 import com.tvremocon.net.HubDiscovery
 import com.tvremocon.net.HubEndpoint
 import com.tvremocon.net.LocalNetworkAccess
+import com.tvremocon.net.RediscoveryGate
 import com.tvremocon.transport.klap.KlapTransport
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -85,6 +87,18 @@ object RemoteSender {
         network: Network,
     ): String? {
         val expectedId = settings.hubDeviceId ?: return null
+
+        // Rate limited on purpose. Away from home this would otherwise sweep a stranger's
+        // network on every press against a hub that is not there.
+        val now = SystemClock.elapsedRealtime()
+        if (!RediscoveryGate.shouldScan(settings.lastRediscoveryAt, now)) {
+            Log.d(TAG, "rediscovery skipped: last sweep ${now - settings.lastRediscoveryAt}ms ago")
+            return null
+        }
+        // Recorded before the sweep, and whether or not it finds anything, so a failing scan
+        // cannot turn into a scan on every press.
+        settings.lastRediscoveryAt = now
+
         val candidates = HubDiscovery.scan(network).map { it.host }.filter { it != settings.host }
         for (candidate in candidates) {
             val hub = hubFor(candidate, authHash, network) ?: continue
