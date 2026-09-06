@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Taken from the remote it replaces: a near-black body, dark grey keys, a red power key,
+     and the four coloured programme keys in their standard Japanese order. -->
 <resources>
-    <color name="widget_background">#E6101418</color>
-    <color name="widget_button">#FF232A31</color>
-    <color name="widget_button_pressed">#FF3D8BFD</color>
-    <color name="widget_button_text">#FFECEFF1</color>
-    <color name="widget_status_text">#FF90A4AE</color>
+    <color name="widget_background">#F00B0D0F</color>
+    <color name="widget_button">#FF2A2F35</color>
+    <color name="widget_button_pressed">#FF4A90D9</color>
+    <color name="widget_button_number">#FF3A4148</color>
+    <color name="widget_button_dpad">#FF343B42</color>
+    <color name="widget_button_ok">#FF454D55</color>
+    <color name="widget_button_text">#FFF2F4F5</color>
+    <color name="widget_status_text">#FF8A98A3</color>
+
+    <color name="widget_power">#FFD32027</color>
+    <color name="widget_power_pressed">#FFF04A50</color>
+    <color name="widget_power_text">#FFFFFFFF</color>
+
+    <color name="widget_blue">#FF1E6FD9</color>
+    <color name="widget_red">#FFD32027</color>
+    <color name="widget_green">#FF1E9E52</color>
+    <color name="widget_yellow">#FFE0B01A</color>
+    <color name="widget_color_text">#FFFFFFFF</color>
 </resources>

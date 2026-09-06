@@ -43,9 +43,15 @@ class Settings(context: Context) {
     fun remoteName(appWidgetId: Int): String? =
         prefs.getString(keyRemoteName(appWidgetId), null)
 
-    /** Slot index to raw `key_list[].name`. Absent entries render as blank buttons. */
-    fun slots(appWidgetId: Int): Map<Int, SlotAssignment> {
-        val stored = prefs.getString(keySlots(appWidgetId), null) ?: return emptyMap()
+    /**
+     * Slot index to raw `key_list[].name` for one grid. Absent entries render as blank.
+     *
+     * Keyed by layout as well as widget: the compact grid is not a prefix of the full one —
+     * the buttons worth keeping when space is short are scattered across the real remote —
+     * so slot 7 means different things in each and they cannot share a map.
+     */
+    fun slots(appWidgetId: Int, layout: WidgetLayout): Map<Int, SlotAssignment> {
+        val stored = prefs.getString(keySlots(appWidgetId, layout), null) ?: return emptyMap()
         val json = runCatching { JSONObject(stored) }.getOrNull() ?: return emptyMap()
         return buildMap {
             json.keys().forEach { slot ->
@@ -59,31 +65,33 @@ class Settings(context: Context) {
     fun putWidget(
         appWidgetId: Int,
         remote: IrRemote,
-        slots: Map<Int, SlotAssignment>,
+        slotsByLayout: Map<WidgetLayout, Map<Int, SlotAssignment>>,
     ) {
-        val json = JSONObject()
-        slots.forEach { (slot, assignment) ->
-            json.put(slot.toString(), JSONObject().put("name", assignment.keyName).put("label", assignment.label))
-        }
-        prefs.edit()
+        val edit = prefs.edit()
             .putString(keyRemote(appWidgetId), remote.deviceId)
             .putString(keyRemoteName(appWidgetId), remote.nickname)
-            .putString(keySlots(appWidgetId), json.toString())
-            .apply()
+        slotsByLayout.forEach { (layout, slots) ->
+            val json = JSONObject()
+            slots.forEach { (slot, assignment) ->
+                json.put(slot.toString(), JSONObject().put("name", assignment.keyName).put("label", assignment.label))
+            }
+            edit.putString(keySlots(appWidgetId, layout), json.toString())
+        }
+        edit.apply()
     }
 
     /** Called from the widget's onDeleted so removed widgets do not leave assignments behind. */
     fun removeWidget(appWidgetId: Int) {
-        prefs.edit()
+        val edit = prefs.edit()
             .remove(keyRemote(appWidgetId))
             .remove(keyRemoteName(appWidgetId))
-            .remove(keySlots(appWidgetId))
-            .apply()
+        WidgetLayout.entries.forEach { edit.remove(keySlots(appWidgetId, it)) }
+        edit.apply()
     }
 
     private fun keyRemote(id: Int) = "widget.$id.remote"
     private fun keyRemoteName(id: Int) = "widget.$id.remote_name"
-    private fun keySlots(id: Int) = "widget.$id.slots"
+    private fun keySlots(id: Int, layout: WidgetLayout) = "widget.$id.slots.${layout.id}"
 
     private companion object {
         const val NAME = "tvremocon"

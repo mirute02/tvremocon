@@ -60,7 +60,9 @@ class TvRemoteWidget : AppWidgetProvider() {
 
         val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, INVALID_ID)
         val slot = intent.getIntExtra(EXTRA_SLOT, -1)
-        if (appWidgetId == INVALID_ID || slot < 0) return
+        // The two grids have separate slot numbering, so the layout is part of the address.
+        val layout = WidgetLayout.entries.firstOrNull { it.id == intent.getStringExtra(EXTRA_LAYOUT) }
+        if (appWidgetId == INVALID_ID || slot < 0 || layout == null) return
 
         // The deadline starts now, not when the coroutine gets scheduled. goAsync() buys
         // roughly ten seconds total, and a queue of taps waiting on the hub mutex can eat
@@ -70,16 +72,22 @@ class TvRemoteWidget : AppWidgetProvider() {
         val pending = goAsync()
         scope.launch {
             try {
-                press(context, appWidgetId, slot, deadline)
+                press(context, appWidgetId, layout, slot, deadline)
             } finally {
                 pending.finish()
             }
         }
     }
 
-    private suspend fun press(context: Context, appWidgetId: Int, slot: Int, deadline: Long) {
+    private suspend fun press(
+        context: Context,
+        appWidgetId: Int,
+        layout: WidgetLayout,
+        slot: Int,
+        deadline: Long,
+    ) {
         val settings = Settings(context)
-        val assignment = settings.slots(appWidgetId)[slot] ?: return
+        val assignment = settings.slots(appWidgetId, layout)[slot] ?: return
         val manager = AppWidgetManager.getInstance(context)
 
         setStatus(context, manager, appWidgetId, context.getString(R.string.status_sending, assignment.label))
@@ -99,7 +107,7 @@ class TvRemoteWidget : AppWidgetProvider() {
             } ?: SendResult.Unknown(context.getString(R.string.status_timed_out))
         }
 
-        Log.i(TAG, "widget=$appWidgetId slot=$slot ${assignment.label} -> $result")
+        Log.i(TAG, "widget=$appWidgetId ${layout.id}/$slot ${assignment.label} -> $result")
         setStatus(context, manager, appWidgetId, describe(context, assignment, result))
     }
 
@@ -127,16 +135,17 @@ class TvRemoteWidget : AppWidgetProvider() {
 
     private fun setStatus(context: Context, manager: AppWidgetManager, appWidgetId: Int, text: String) {
         // Redrawing the whole widget would rebuild every PendingIntent for a status change.
-        val views = RemoteViews(context.packageName, R.layout.widget_remote_compact)
+        val compact = RemoteViews(context.packageName, R.layout.widget_remote_compact)
         val full = RemoteViews(context.packageName, R.layout.widget_remote_full)
-        listOf(views, full).forEach { it.setTextViewText(R.id.status, text) }
-        manager.partiallyUpdateAppWidget(appWidgetId, sized(views, full))
+        listOf(compact, full).forEach { it.setTextViewText(R.id.status, text) }
+        manager.partiallyUpdateAppWidget(appWidgetId, sized(compact, full))
     }
 
     companion object {
         private const val TAG = "TvRemocon"
         private const val ACTION_PRESS = "com.tvremocon.PRESS"
         private const val EXTRA_SLOT = "slot"
+        private const val EXTRA_LAYOUT = "layout"
         private const val INVALID_ID = AppWidgetManager.INVALID_APPWIDGET_ID
 
         /**
@@ -158,10 +167,9 @@ class TvRemoteWidget : AppWidgetProvider() {
         fun render(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
             val settings = Settings(context)
             val configured = settings.isConfigured && settings.remoteDeviceId(appWidgetId) != null
-            val slots = if (configured) settings.slots(appWidgetId) else emptyMap()
 
-            val compact = build(context, appWidgetId, WidgetLayout.COMPACT, slots, configured)
-            val full = build(context, appWidgetId, WidgetLayout.FULL, slots, configured)
+            val compact = build(context, appWidgetId, WidgetLayout.COMPACT, settings, configured)
+            val full = build(context, appWidgetId, WidgetLayout.FULL, settings, configured)
             manager.updateAppWidget(appWidgetId, sized(compact, full))
         }
 
@@ -182,16 +190,16 @@ class TvRemoteWidget : AppWidgetProvider() {
             context: Context,
             appWidgetId: Int,
             layout: WidgetLayout,
-            slots: Map<Int, SlotAssignment>,
+            settings: Settings,
             configured: Boolean,
         ): RemoteViews {
-            val resource = when (layout) {
-                WidgetLayout.COMPACT -> R.layout.widget_remote_compact
-                WidgetLayout.FULL -> R.layout.widget_remote_full
-            }
-            val views = RemoteViews(context.packageName, resource)
+            val slots = if (configured) settings.slots(appWidgetId, layout) else emptyMap()
+            val views = RemoteViews(context.packageName, layoutResource(layout))
 
-            if (!configured) {
+            // An empty grid is also "needs setup", not just a missing host. Assignments can
+            // go missing when the stored format changes between versions, and a widget with
+            // no buttons would otherwise have no way back to the configuration screen.
+            if (!configured || slots.isEmpty()) {
                 // Every button opens setup, so there is no way to tap a dead widget and get
                 // nothing. Straight to an Activity — never a broadcast that then starts one.
                 val setup = setupIntent(context, appWidgetId)
@@ -217,16 +225,21 @@ class TvRemoteWidget : AppWidgetProvider() {
                 }
                 views.setViewVisibility(id, View.VISIBLE)
                 views.setTextViewText(id, assignment.label)
-                views.setOnClickPendingIntent(id, pressIntent(context, appWidgetId, slot))
+                views.setOnClickPendingIntent(id, pressIntent(context, appWidgetId, layout, slot))
             }
-            views.setTextViewText(R.id.status, Settings(context).remoteName(appWidgetId).orEmpty())
+            views.setTextViewText(R.id.status, settings.remoteName(appWidgetId).orEmpty())
             return views
+        }
+
+        private fun layoutResource(layout: WidgetLayout): Int = when (layout) {
+            WidgetLayout.COMPACT -> R.layout.widget_remote_compact
+            WidgetLayout.FULL -> R.layout.widget_remote_full
         }
 
         private fun slotViewId(context: Context, layout: WidgetLayout, slot: Int): Int? {
             @Suppress("DiscouragedApi")
             val id = context.resources.getIdentifier(
-                "slot_%02d".format(slot), "id", context.packageName
+                layout.viewIdName(slot), "id", context.packageName
             )
             return id.takeIf { it != 0 }
         }
@@ -239,15 +252,23 @@ class TvRemoteWidget : AppWidgetProvider() {
          * So identity is carried three ways: a unique requestCode, a data URI naming the
          * widget and slot, and the extras the receiver actually reads.
          */
-        private fun pressIntent(context: Context, appWidgetId: Int, slot: Int): PendingIntent {
+        private fun pressIntent(
+            context: Context,
+            appWidgetId: Int,
+            layout: WidgetLayout,
+            slot: Int,
+        ): PendingIntent {
             val intent = Intent(context, TvRemoteWidget::class.java)
                 .setAction(ACTION_PRESS)
-                .setData(Uri.parse("tvremocon://widget/$appWidgetId/slot/$slot"))
+                .setData(Uri.parse("tvremocon://widget/$appWidgetId/${layout.id}/$slot"))
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                .putExtra(EXTRA_LAYOUT, layout.id)
                 .putExtra(EXTRA_SLOT, slot)
             return PendingIntent.getBroadcast(
                 context,
-                appWidgetId * WidgetLayout.MAX_SLOTS + slot,
+                // Distinct per widget, per grid, per slot. The data URI above carries the same
+                // three, since PendingIntent equality ignores extras.
+                (appWidgetId * WidgetLayout.entries.size + layout.ordinal) * WidgetLayout.MAX_SLOTS + slot,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )

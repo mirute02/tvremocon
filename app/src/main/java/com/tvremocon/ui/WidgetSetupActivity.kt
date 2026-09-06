@@ -243,10 +243,13 @@ class WidgetSetupActivity : AppCompatActivity() {
 
     private fun save(remote: IrRemote) {
         val settings = Settings(this)
-        // One map covers both grids: FULL is COMPACT plus extra rows and the slot indices
-        // are shared, so a button keeps its place when the widget is resized.
-        val slots = defaultSlots(remote, WidgetLayout.FULL)
-        settings.putWidget(appWidgetId, remote, slots)
+        // One map per grid: the two have separate slot numbering, and both are filled now
+        // because resizing the widget switches between them with no chance to ask again.
+        settings.putWidget(
+            appWidgetId,
+            remote,
+            WidgetLayout.entries.associateWith { defaultSlots(remote, it) },
+        )
 
         val missing = unresolvedFunctions(remote, WidgetLayout.FULL)
         if (missing.isNotEmpty()) {
