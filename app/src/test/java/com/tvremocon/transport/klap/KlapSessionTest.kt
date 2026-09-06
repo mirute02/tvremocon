@@ -125,13 +125,32 @@ class KlapSessionTest {
     }
 
     @Test
-    fun `corrupt ciphertext fails as a security exception not an IOException`() {
+    fun `a tampered ciphertext is rejected by the signature, not by padding`() {
         val session = KlapSession(localSeed, remoteSeed, authHash)
         val encrypted = session.encrypt("{}".toByteArray())
         val corrupted = encrypted.body.copyOf().also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() }
-        // This is the distinction KlapTransport has to catch separately: a stale session
-        // surfaces here, and it is not an IOException.
-        assertThrows(javax.crypto.BadPaddingException::class.java) { session.decrypt(corrupted) }
+        // AES-CBC notices nothing on its own; padding happens to fail here, but it would not
+        // for every edit, and a reply that decrypts to something plausible is the case that
+        // matters. The signature is what actually rejects it — and before any decryption.
+        assertThrows(SecurityException::class.java) { session.decrypt(corrupted) }
+    }
+
+    @Test
+    fun `a tampered signature is rejected`() {
+        val session = KlapSession(localSeed, remoteSeed, authHash)
+        val encrypted = session.encrypt("{}".toByteArray())
+        val corrupted = encrypted.body.copyOf().also { it[0] = (it[0] + 1).toByte() }
+        assertThrows(SecurityException::class.java) { session.decrypt(corrupted) }
+    }
+
+    @Test
+    fun `a reply signed with the wrong key is rejected`() {
+        // What an attacker on the same network can actually produce: a well-formed reply
+        // whose signature was computed without the credentials behind it.
+        val session = KlapSession(localSeed, remoteSeed, authHash)
+        val impostor = KlapSession(localSeed, remoteSeed, ByteArray(32) { 0x5a })
+        val forged = impostor.encrypt("""{"error_code":0}""".toByteArray())
+        assertThrows(SecurityException::class.java) { session.decrypt(forged.body) }
     }
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }

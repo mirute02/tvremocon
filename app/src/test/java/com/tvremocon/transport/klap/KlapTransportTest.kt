@@ -130,6 +130,29 @@ class KlapTransportTest {
     }
 
     @Test
+    fun `a reply with a bad signature is outcome-unknown and is not retried`() = runBlocking {
+        hub.forgeSignature = true
+        val transport = transport()
+        assertThrows(HubResponseLostException::class.java) {
+            runBlocking { transport.call(IR_SEND, allowRetry = false) }
+        }
+        // The request did go out, so this is not a failure — but it is also not repeated,
+        // even though the caller could not have known the reply would be unusable.
+        assertEquals(1, hub.requestCount.get())
+    }
+
+    @Test
+    fun `a bad signature is not retried even for a read`() = runBlocking {
+        hub.forgeSignature = true
+        val transport = transport()
+        assertThrows(HubResponseLostException::class.java) {
+            runBlocking { transport.call("""{"method":"get_device_info"}""", allowRetry = true) }
+        }
+        // Retrying under something that is evidently interfering just hands it another go.
+        assertEquals(1, hub.requestCount.get())
+    }
+
+    @Test
     fun `undecryptable reply is reported as lost rather than failed for an ir send`() = runBlocking {
         hub.corruptResponse = true
         val transport = transport()
@@ -183,6 +206,7 @@ class KlapTransportTest {
 
         @Volatile var dropResponseAfterReceiving = false
         @Volatile var corruptResponse = false
+        @Volatile var forgeSignature = false
 
         private var session: KlapSession? = null
 
@@ -235,10 +259,13 @@ class KlapTransportTest {
                     val active = session ?: return
                     val reply = """{"error_code":0,"result":{"model":"TH11"}}"""
                     val encrypted = active.encrypt(reply.toByteArray())
-                    val payload = if (corruptResponse) {
-                        encrypted.body.copyOf().also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() }
-                    } else {
-                        encrypted.body
+                    val payload = when {
+                        corruptResponse ->
+                            encrypted.body.copyOf().also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() }
+                        // Body intact, signature nonsense: what tampering on the wire looks
+                        // like, and the case AES-CBC alone would let through.
+                        forgeSignature -> encrypted.body.copyOf().also { it[0] = (it[0] + 1).toByte() }
+                        else -> encrypted.body
                     }
                     respond(socket, payload)
                 }

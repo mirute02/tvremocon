@@ -69,6 +69,15 @@ class KlapTransport(
                     // The hub may have acted on it. Replaying is exactly what must not happen.
                     invalidate()
                     throw e
+                } catch (e: SecurityException) {
+                    // The reply did not come from something holding the signing key. Never
+                    // retried, even for a read: the request itself did go out, so the outcome
+                    // is unknown rather than failed, and repeating it under someone who is
+                    // evidently interfering would only give them a second attempt.
+                    // SecurityException is a RuntimeException, so the GeneralSecurityException
+                    // branch below does not cover it.
+                    invalidate()
+                    throw HubResponseLostException("response signature did not verify", e)
                 } catch (e: IOException) {
                     invalidate()
                     if (!allowRetry) throw e

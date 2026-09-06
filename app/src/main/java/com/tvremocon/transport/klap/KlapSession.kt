@@ -49,21 +49,34 @@ class KlapSession(localSeed: ByteArray, remoteSeed: ByteArray, authHash: ByteArr
     }
 
     /**
-     * Strips the leading 32-byte signature and decrypts with the sequence number of the
+     * Verifies the leading 32-byte signature, then decrypts with the sequence number of the
      * request this is a response to.
      *
-     * Throws [IllegalArgumentException] for a truncated payload and
-     * [javax.crypto.BadPaddingException] for a body that does not decrypt — note that
-     * neither is an IOException, which is what makes the stale-session case easy to miss.
+     * The signature is checked before anything is decrypted. AES-CBC on its own detects
+     * nothing: without this, someone on the same network could flip bits in a reply, or
+     * substitute one wholesale, and the result would be parsed as if the hub had said it.
+     * Forging a reply still needs the signing key, which is derived from the credentials.
+     *
+     * Throws [IllegalArgumentException] for a truncated payload, [SecurityException] for one
+     * whose signature does not match, and [javax.crypto.BadPaddingException] for a body that
+     * passes the signature and still fails to decrypt. None of the three is an IOException,
+     * which is what makes them easy to miss in a catch.
      */
     fun decrypt(payload: ByteArray): ByteArray {
         require(payload.size > SIGNATURE_SIZE) {
             "response is ${payload.size} bytes, shorter than the signature"
         }
+        val ciphertext = payload.copyOfRange(SIGNATURE_SIZE, payload.size)
+        val expected = sha256(signingKey, int32be(sequence), ciphertext)
+        // Constant-time: a byte-by-byte comparison that stops early leaks how much of a
+        // forged signature was right, which is enough to build one a byte at a time.
+        if (!MessageDigest.isEqual(expected, payload.copyOf(SIGNATURE_SIZE))) {
+            throw SecurityException("response signature does not match for seq $sequence")
+        }
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv()))
         }
-        return cipher.doFinal(payload, SIGNATURE_SIZE, payload.size - SIGNATURE_SIZE)
+        return cipher.doFinal(ciphertext)
     }
 
     private fun iv(): ByteArray = ivPrefix + int32be(sequence)

@@ -104,10 +104,19 @@ public class KlapProbe {
             return ByteBuffer.allocate(sig.length + ct.length).put(sig).put(ct).array();
         }
 
-        /** Strips the 32-byte signature and decrypts with the current seq. */
+        /**
+         * Verifies the 32-byte signature, then decrypts with the current seq.
+         *
+         * AES-CBC detects no tampering by itself, so the signature is what stops a reply
+         * from the network being read as one from the hub.
+         */
         byte[] decrypt(byte[] payload) throws GeneralSecurityException {
             if (payload.length < 32) throw new IllegalArgumentException("response shorter than signature");
             byte[] ct = Arrays.copyOfRange(payload, 32, payload.length);
+            byte[] expected = sha256(sigKey, int32be(seq), ct);
+            if (!MessageDigest.isEqual(expected, Arrays.copyOf(payload, 32))) {
+                throw new GeneralSecurityException("response signature does not match for seq " + seq);
+            }
             Cipher c = Cipher.getInstance("AES/CBC/PKCS5Padding");
             c.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new IvParameterSpec(iv()));
             return c.doFinal(ct);
