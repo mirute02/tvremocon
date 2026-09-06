@@ -73,7 +73,8 @@ published.
 
 The APK is signed with a dedicated key. **Android only allows an upgrade in place if the
 signature matches**, so a build of your own and one from Releases cannot replace each other
-without uninstalling first. Each release note carries the certificate's SHA-256.
+without uninstalling first. Each release note carries the certificate's SHA-256. The signing key is not
+checked into the repository and its password is not stored on the build device.
 
 To build it yourself, see [Building](#building).
 
