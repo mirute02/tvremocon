@@ -1,0 +1,14 @@
+# Phase 0 probe: fetched jar and device-specific captures
+tools/json.jar
+tools/fixtures/
+
+# Android / Gradle (populated in Phase 1a)
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.kotlin/
