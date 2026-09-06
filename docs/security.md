@@ -9,7 +9,7 @@
 | 経路 | 対策 |
 |---|---|
 | ブロードキャストを投げて送信させる | `TvRemoteWidget` は `android:exported="false"`。他アプリからは届かない |
-| こちらの `PendingIntent` を横取りして書き換える | 全て `FLAG_IMMUTABLE`。受け取った側がフィールドを埋められない |
+| こちらの `PendingIntent` を横取りして書き換える | どれも `FLAG_IMMUTABLE`。受け取った側がフィールドを埋められない |
 | 別ウィジェットのボタンを押させる | `PendingIntent` は **requestCode + action + data + component** で同一判定され、**extras は無視される**。extras だけで区別すると 2 つのウィジェットが同じ `PendingIntent` を共有してしまうため、`requestCode = appWidgetId * MAX_SLOTS + slot` と `tvremocon://widget/<id>/slot/<n>` の data URI の両方で区別している |
 | デバッグ画面を開かせて任意のキーを送らせる | `DebugActivity` は `exported="false"`。パスワード入力欄があり全キーを送れる画面なので、他アプリから表示できてはいけない |
 | 設定画面を任意の widgetId で開かせる | `WidgetSetupActivity` は `APPWIDGET_CONFIGURE` のため **exported にせざるを得ない**。そこで起動時に `getAppWidgetIds()` で**自分のプロバイダの id か検証**し、違えば即 `finish()` する |
@@ -49,7 +49,7 @@
 
 ## 5. 意図的にやっていないこと
 
-- **自動再送しない。** アプリ層・KLAP 層・HTTP 層すべてで抑止している。
+- **自動再送しない。** アプリ層・KLAP 層・HTTP 層のそれぞれで抑止している。
   応答が失われた場合は「失敗」ではなく「結果不明」と表示する。
   勝手に再送すると音量が 2 段階上がるなど、物理的な影響が二重になる
 - **期限切れの操作は捨てる。** 連打で詰まった古いタップを後から実行しない
