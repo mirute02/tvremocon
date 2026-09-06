@@ -4,6 +4,7 @@ import com.tvremocon.transport.HubAuthException
 import com.tvremocon.transport.HubProtocolException
 import com.tvremocon.transport.HubResponseLostException
 import com.tvremocon.transport.HubTransport
+import com.tvremocon.transport.HubUnreachableException
 import com.tvremocon.transport.SmartEnvelope
 import org.json.JSONArray
 import org.json.JSONObject
@@ -81,6 +82,9 @@ class TapoIrHub(private val transport: HubTransport) {
             transport.call(envelope.toString(), allowRetry = false)
         } catch (e: HubAuthException) {
             return SendResult.NotSent(SendResult.Reason.BAD_CREDENTIALS)
+        } catch (e: HubUnreachableException) {
+            // Nothing went out. Safe for the caller to look for the hub elsewhere.
+            return SendResult.NotSent(SendResult.Reason.HUB_UNREACHABLE)
         } catch (e: HubResponseLostException) {
             return SendResult.Unknown(e.message ?: "no response after sending")
         } catch (e: IOException) {

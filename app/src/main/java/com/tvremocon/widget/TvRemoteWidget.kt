@@ -127,6 +127,7 @@ class TvRemoteWidget : AppWidgetProvider() {
                         SendResult.Reason.NO_WIFI -> R.string.reason_no_wifi
                         SendResult.Reason.NOT_CONFIGURED -> R.string.reason_not_configured
                         SendResult.Reason.BAD_CREDENTIALS -> R.string.reason_bad_credentials
+                        SendResult.Reason.HUB_UNREACHABLE -> R.string.reason_hub_unreachable
                         SendResult.Reason.DEADLINE_PASSED -> R.string.reason_deadline
                     }
                 ),

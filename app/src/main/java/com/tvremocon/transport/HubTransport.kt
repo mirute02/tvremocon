@@ -28,6 +28,16 @@ interface HubTransport {
     fun invalidate()
 }
 
+/**
+ * The hub could not be reached at all — the handshake never completed, so no request left
+ * this device.
+ *
+ * Distinct from [HubResponseLostException] and that distinction is load-bearing: nothing was
+ * transmitted, so sending the same key once at a newly discovered address is a first attempt,
+ * not a retry of an IR command.
+ */
+class HubUnreachableException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
 /** The credentials are wrong. Retrying cannot help. */
 class HubAuthException(message: String) : IOException(message)
 

@@ -3,6 +3,7 @@ package com.tvremocon.ir
 import com.tvremocon.transport.HubAuthException
 import com.tvremocon.transport.HubResponseLostException
 import com.tvremocon.transport.HubTransport
+import com.tvremocon.transport.HubUnreachableException
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -58,6 +59,20 @@ class TapoIrHubTest {
         assertTrue(result is SendResult.Unknown)
         // Reporting this as failed would invite a second press for a command already sent.
         assertFalse(result is SendResult.NotSent)
+    }
+
+    @Test
+    fun `unreachable hub is not sent, and is distinct from a lost response`() = runBlocking {
+        val (_, hub) = hub { throw HubUnreachableException("no handshake response from 192.168.1.4") }
+        val result = hub.sendKey("DEV1", "POWER")
+        // The handshake never completed, so nothing was transmitted. This is the only failure
+        // that lets the caller look for the hub elsewhere and press again — a lost response
+        // must never do that, because the hub may already have acted.
+        assertEquals(SendResult.NotSent(SendResult.Reason.HUB_UNREACHABLE), result)
+
+        // Contrast: the same network trouble one step later, after the request went out.
+        val (_, afterSend) = hub { throw HubResponseLostException("no response after sending seq 7") }
+        assertTrue(afterSend.sendKey("DEV1", "POWER") is SendResult.Unknown)
     }
 
     @Test

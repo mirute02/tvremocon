@@ -37,6 +37,9 @@ sealed interface SendResult {
         /** The account does not match this hub; retrying cannot help. */
         BAD_CREDENTIALS,
 
+        /** The hub did not answer, and rediscovery did not find it either. */
+        HUB_UNREACHABLE,
+
         /** Gave up before sending because the operation's deadline passed. */
         DEADLINE_PASSED,
     }

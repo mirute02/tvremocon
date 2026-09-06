@@ -1,121 +1,103 @@
 package com.tvremocon
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Intent
 import android.os.Bundle
-import android.util.Log
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import com.tvremocon.databinding.ActivityMainBinding
-import com.tvremocon.net.HubEndpoint
+import com.tvremocon.data.SecretStore
+import com.tvremocon.data.Settings
 import com.tvremocon.net.LocalNetworkAccess
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.security.SecureRandom
-import java.util.concurrent.TimeUnit
+import com.tvremocon.ui.DebugActivity
+import com.tvremocon.widget.TvRemoteWidget
 
 /**
- * Phase 1b reachability check: can the *installed APK* reach the hub?
+ * What the launcher icon opens.
  *
- * Deliberately stops at handshake1, which needs no credentials and sends no IR. Succeeding
- * here is a separate pass condition from the Termux probe succeeding — the probe runs as
- * Termux and inherits its permissions, this runs as its own app under Android 17's
- * local-network gate.
+ * The app's real surface is the home-screen widget, so this exists to explain that and to
+ * show whether the pieces a widget depends on are in place. Diagnosing from here beats
+ * pressing a widget button and getting one line of status text.
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityMainBinding
-
-    private val requestPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) probe() else show("権限が拒否されました。設定 → アプリ → TV Remocon から許可してください。")
-        }
+    private lateinit var report: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        binding.textView.text = "ハブ $HOST への到達を確認します"
-        binding.textView.setOnClickListener { start() }
-        start()
-    }
 
-    private fun start() {
-        val permission = LocalNetworkAccess.permission
-        if (permission != null && !LocalNetworkAccess.hasPermission(this)) {
-            show("ローカルネットワークへのアクセスを許可してください…")
-            requestPermission.launch(permission)
-            return
-        }
-        probe()
-    }
-
-    private fun probe() {
-        val endpoint = HubEndpoint.of(HOST)
-        if (endpoint == null) {
-            show("$HOST はプライベート IPv4 ではありません")
-            return
-        }
-        val network = LocalNetworkAccess.wifiNetwork(this)
-        if (network == null) {
-            show("未送信: Wi-Fi に接続していません")
-            return
+        report = TextView(this).apply {
+            setTextIsSelectable(true)
+            setLineSpacing(0f, 1.3f)
         }
 
-        show("$endpoint に handshake1 を送信中…")
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                // Pin to the Wi-Fi network: Android otherwise routes over cellular when it
-                // thinks Wi-Fi has no internet, and LAN addresses stop resolving.
-                val client = OkHttpClient.Builder()
-                    .socketFactory(network.socketFactory)
-                    .retryOnConnectionFailure(false)
-                    .followRedirects(false)
-                    .followSslRedirects(false)
-                    .connectTimeout(2, TimeUnit.SECONDS)
-                    .readTimeout(5, TimeUnit.SECONDS)
-                    .writeTimeout(5, TimeUnit.SECONDS)
-                    .build()
-                val seed = ByteArray(16).also { SecureRandom().nextBytes(it) }
-                val request = Request.Builder()
-                    .url(endpoint.url(HubEndpoint.Path.HANDSHAKE1))
-                    .post(seed.toRequestBody(null))
-                    .build()
-                runCatching {
-                    client.newCall(request).execute().use { response ->
-                        val bytes = response.body?.bytes()?.size ?: 0
-                        // Log the cookie's presence, never its value.
-                        val cookie = response.headers("Set-Cookie").any { it.startsWith("TP_SESSIONID=") }
-                        Triple(response.code, bytes, cookie)
+        setContentView(
+            ScrollView(this).apply {
+                addView(
+                    LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(20), dp(20), dp(20), dp(20))
+                        addView(report)
+                        addView(
+                            Button(this@MainActivity).apply {
+                                text = getString(R.string.main_open_debug)
+                                setOnClickListener {
+                                    startActivity(Intent(this@MainActivity, DebugActivity::class.java))
+                                }
+                            }
+                        )
+                        addView(
+                            Button(this@MainActivity).apply {
+                                text = getString(R.string.main_refresh_widgets)
+                                setOnClickListener {
+                                    TvRemoteWidget.refresh(this@MainActivity)
+                                    describe()
+                                }
+                            }
+                        )
                     }
-                }
+                )
             }
+        )
+    }
 
-            result.onSuccess { (code, bytes, cookie) ->
-                Log.i(TAG, "handshake1: HTTP $code, $bytes bytes, session cookie=$cookie")
-                if (code == 200 && bytes == 48 && cookie) {
-                    show("到達成功\n\nHTTP $code / 48 バイト / セッション Cookie あり\nハブは KLAP で応答しています。")
-                } else {
-                    show("到達したが応答が想定外\n\nHTTP $code / $bytes バイト / Cookie=$cookie")
-                }
-            }.onFailure { e ->
-                Log.w(TAG, "handshake1 failed", e)
-                show("到達できません\n\n${e.javaClass.simpleName}: ${e.message}\n\nタップで再試行")
+    override fun onResume() {
+        super.onResume()
+        describe()
+    }
+
+    private fun describe() {
+        val settings = Settings(this)
+        val widgetIds = AppWidgetManager.getInstance(this)
+            .getAppWidgetIds(ComponentName(this, TvRemoteWidget::class.java))
+
+        report.text = buildString {
+            appendLine(getString(R.string.main_intro))
+            appendLine()
+            appendLine(line(R.string.main_check_permission, LocalNetworkAccess.hasPermission(this@MainActivity)))
+            appendLine(line(R.string.main_check_wifi, LocalNetworkAccess.wifiNetwork(this@MainActivity) != null))
+            appendLine(line(R.string.main_check_credentials, SecretStore(this@MainActivity).hasAuthHash()))
+            appendLine(
+                line(R.string.main_check_hub, settings.isConfigured) +
+                    (settings.host?.let { " ($it)" } ?: "")
+            )
+            appendLine(getString(R.string.main_widget_count, widgetIds.size))
+            widgetIds.forEach { id ->
+                val name = settings.remoteName(id)
+                appendLine("  #$id  ${name ?: getString(R.string.main_widget_unconfigured)}")
+            }
+            if (widgetIds.isEmpty()) {
+                appendLine()
+                appendLine(getString(R.string.main_how_to_add))
             }
         }
     }
 
-    private fun show(text: String) {
-        binding.textView.text = text
-    }
+    private fun line(labelRes: Int, ok: Boolean): String =
+        "${if (ok) "✓" else "✗"} ${getString(labelRes)}"
 
-    private companion object {
-        const val TAG = "TvRemocon"
-
-        /** Phase 1b only. Discovery replaces this in Phase 3. */
-        const val HOST = "192.168.1.4"
-    }
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }

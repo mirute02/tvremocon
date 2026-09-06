@@ -251,15 +251,37 @@ class WidgetSetupActivity : AppCompatActivity() {
             WidgetLayout.entries.associateWith { defaultSlots(remote, it) },
         )
 
-        val missing = unresolvedFunctions(remote, WidgetLayout.FULL)
-        if (missing.isNotEmpty()) {
-            // Say which buttons will be blank rather than leaving unexplained gaps.
-            Log.i(TAG, "unresolved on ${remote.nickname}: ${missing.joinToString { it.name }}")
+        // Gaps in the grid should be explained, not left for the user to discover by
+        // pressing a blank button. Shown on screen rather than only logged.
+        val missing = WidgetLayout.entries.flatMap { unresolvedFunctions(remote, it) }.distinct()
+        if (missing.isEmpty()) {
+            TvRemoteWidget.render(this, AppWidgetManager.getInstance(this), appWidgetId)
+            setResult(Activity.RESULT_OK, resultIntent())
+            finish()
+            return
         }
 
-        TvRemoteWidget.render(this, AppWidgetManager.getInstance(this), appWidgetId)
-        setResult(Activity.RESULT_OK, resultIntent())
-        finish()
+        Log.i(TAG, "unresolved on ${remote.nickname}: ${missing.joinToString { it.name }}")
+        content.removeAllViews()
+        status.text = getString(
+            com.tvremocon.R.string.setup_missing_keys,
+            missing.size,
+            missing.joinToString("、") { it.label },
+        )
+        content.addView(
+            Button(this).apply {
+                text = getString(com.tvremocon.R.string.setup_finish)
+                setOnClickListener {
+                    TvRemoteWidget.render(
+                        this@WidgetSetupActivity,
+                        AppWidgetManager.getInstance(this@WidgetSetupActivity),
+                        appWidgetId,
+                    )
+                    setResult(Activity.RESULT_OK, resultIntent())
+                    finish()
+                }
+            }
+        )
     }
 
     private fun ownWidgetIds(): IntArray =

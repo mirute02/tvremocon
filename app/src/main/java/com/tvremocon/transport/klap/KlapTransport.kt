@@ -5,6 +5,7 @@ import com.tvremocon.net.HubEndpoint
 import com.tvremocon.transport.HubAuthException
 import com.tvremocon.transport.HubResponseLostException
 import com.tvremocon.transport.HubTransport
+import com.tvremocon.transport.HubUnreachableException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -114,12 +115,19 @@ class KlapTransport(
     private fun handshake(): KlapSession {
         val localSeed = ByteArray(KlapSession.SEED_SIZE).also(random::nextBytes)
 
-        val first = execute(
-            Request.Builder()
-                .url(endpoint.url(HubEndpoint.Path.HANDSHAKE1))
-                .post(localSeed.toRequestBody(null))
-                .build()
-        )
+        // A transport failure here happened before any application request was built, so the
+        // caller is free to look for the hub elsewhere and try again without that counting
+        // as a resend.
+        val first = try {
+            execute(
+                Request.Builder()
+                    .url(endpoint.url(HubEndpoint.Path.HANDSHAKE1))
+                    .post(localSeed.toRequestBody(null))
+                    .build()
+            )
+        } catch (e: IOException) {
+            throw HubUnreachableException("no handshake response from $endpoint", e)
+        }
         if (first.code != 200) throw IOException("handshake1 returned HTTP ${first.code}")
         if (first.body.size != HANDSHAKE1_SIZE) {
             throw IOException("handshake1 returned ${first.body.size} bytes, expected $HANDSHAKE1_SIZE")

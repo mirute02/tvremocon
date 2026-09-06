@@ -210,6 +210,7 @@ class DebugActivity : AppCompatActivity() {
                 SendResult.Reason.NO_WIFI -> "Wi-Fi 未接続"
                 SendResult.Reason.NOT_CONFIGURED -> "未設定"
                 SendResult.Reason.BAD_CREDENTIALS -> "資格情報が一致しません"
+                SendResult.Reason.HUB_UNREACHABLE -> "ハブに届きません"
                 SendResult.Reason.DEADLINE_PASSED -> "期限切れ"
             }
         })"
