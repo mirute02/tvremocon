@@ -20,6 +20,7 @@ import com.tvremocon.ir.SendResult
 import com.tvremocon.ui.WidgetSetupActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -34,13 +35,16 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Everything is scoped to appWidgetId: the assignments, the status line, and the identity of
  * each PendingIntent. Two remotes on one home screen must not press each other's buttons.
  *
- * **Full repaints are rare on purpose.** Replacing the view tree makes this launcher
- * re-deliver a click that belonged to the tree being replaced, roughly 10-30ms later. With
- * the resting look painted by a full repaint that was self-sustaining: repaint, replayed
- * click, wake, five seconds, repaint again — a loop that ran for over a minute and swallowed
- * every real tap. So waking and resting are partial updates, which change colours and text
- * without rebuilding anything clickable, and every PendingIntent carries the generation it
- * was drawn in so a replayed click from an older tree is recognised and dropped.
+ * Waking and resting redraw the whole view tree. Partial updates were tried, on the theory
+ * that a launcher was replaying clicks after each tree replacement; that theory was wrong —
+ * the repeating pattern in the logs was someone pressing the button again every time it went
+ * dim — and partial updates turn out not to apply at all to the size-mapped RemoteViews this
+ * widget uses, so the widget stopped changing colour.
+ *
+ * A redraw therefore rebuilds every click target, and that is why it does **not** advance the
+ * generation: a press already on its way would be dropped as stale for no reason. Only a
+ * structural repaint — setup finishing, a resize — advances it, because those are the ones
+ * after which an older click really is talking about a different widget.
  */
 class TvRemoteWidget : AppWidgetProvider() {
 
@@ -127,12 +131,18 @@ class TvRemoteWidget : AppWidgetProvider() {
     }
 
     /**
-     * Makes the widget live and paints it so, then waits out the window.
+     * Makes the widget live and paints it so.
      *
      * The window opens immediately — a press is checked against the deadline, not against
      * what is drawn — but the paint waits a beat. A view keeps its pressed state for a moment
      * after the finger lifts, and installing a background that has a pressed colour while
      * that is still set makes the woken key flash.
+     *
+     * The broadcast is released as soon as that paint is done. It used to be held for the
+     * whole window so the resting repaint could not be frozen out, and that quietly broke the
+     * widget: Android delivers broadcasts to one receiver serially, so every other tap queued
+     * behind the hold and was released a moment after the window closed — where it counted as
+     * a wake rather than a press. Four buttons in a row went nowhere that way.
      */
     private fun wake(
         context: Context,
@@ -142,6 +152,7 @@ class TvRemoteWidget : AppWidgetProvider() {
         now: Long,
     ) {
         val alreadyLive = settings.armedUntil(appWidgetId) > now
+        Log.d(TAG, "wake widget=$appWidgetId alreadyLive=$alreadyLive")
         settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
         if (alreadyLive) return // extend only; a second hold racing the first is how loops start
 
@@ -149,40 +160,48 @@ class TvRemoteWidget : AppWidgetProvider() {
         scope.launch {
             try {
                 delay(PRESSED_STATE_TAIL_MS)
-                paint(context, manager, appWidgetId, armed = true)
-                holdUntilResting(context, manager, settings, appWidgetId)
+                redraw(context, manager, appWidgetId, armed = true)
             } finally {
                 pending.finish()
             }
         }
+        scheduleRest(context, manager, settings, appWidgetId)
     }
 
     /**
      * Waits out the armed window, then paints the widget as resting.
      *
-     * An alarm was the obvious mechanism and does not work here: inexact alarms are deferred
-     * heavily for background apps, and this device's vendor power management freezes the
-     * process about six seconds after it drops to the background. Holding the broadcast open
-     * and waiting is deterministic for as long as the process survives, which is the case
-     * that matters — the user is looking at the widget they just tapped. It is also why the
-     * window is five seconds: fifteen was tried, and the repaint never arrived.
+     * Runs on the process-lifetime scope with no broadcast held, so it cannot delay the next
+     * tap. That is the whole point: holding one blocks every subsequent press behind it.
      *
-     * A later press extends the deadline, so the wait is re-checked rather than assumed;
-     * whichever hold outlives the others does the repaint and the rest do nothing.
+     * An alarm would have been the obvious mechanism and does not work here — inexact alarms
+     * are deferred heavily for background apps, and this device's power management freezes
+     * the process about six seconds after it drops to the background. Nothing else needs to
+     * survive that: a press is checked against the stored deadline, never against what is
+     * drawn, so a widget left looking live simply wakes on the next tap instead of sending.
+     * The five-second window keeps the wait comfortably inside that six-second margin.
+     *
+     * One waiter per widget. A later press extends the deadline, and the waiter re-checks
+     * rather than assumes, so it settles on the last press rather than the first.
      */
-    private suspend fun holdUntilResting(
+    private fun scheduleRest(
         context: Context,
         manager: AppWidgetManager,
         settings: Settings,
         appWidgetId: Int,
     ) {
-        while (true) {
-            val remaining = settings.armedUntil(appWidgetId) - SystemClock.elapsedRealtime()
-            if (remaining <= 0) break
-            delay(remaining)
+        synchronized(resting) {
+            if (resting[appWidgetId]?.isActive == true) return
+            resting[appWidgetId] = scope.launch {
+                while (true) {
+                    val remaining = settings.armedUntil(appWidgetId) - SystemClock.elapsedRealtime()
+                    if (remaining <= 0) break
+                    delay(remaining)
+                }
+                Log.d(TAG, "widget=$appWidgetId resting")
+                redraw(context, manager, appWidgetId, armed = false)
+            }
         }
-        Log.d(TAG, "widget=$appWidgetId resting")
-        paint(context, manager, appWidgetId, armed = false)
     }
 
     private suspend fun press(
@@ -200,7 +219,7 @@ class TvRemoteWidget : AppWidgetProvider() {
             // look identical from outside.
             Log.w(TAG, "press widget=$appWidgetId ${layout.id}/$slot has no assignment " +
                 "(${settings.slots(appWidgetId, layout).size} slots stored)")
-            holdUntilResting(context, manager, settings, appWidgetId)
+            scheduleRest(context, manager, settings, appWidgetId)
             return
         }
         val startedAt = SystemClock.elapsedRealtime()
@@ -228,8 +247,10 @@ class TvRemoteWidget : AppWidgetProvider() {
         // delivered twice; a large elapsed time points at the transport instead.
         Log.i(TAG, "press widget=$appWidgetId ${layout.id}/$slot ${assignment.label} " +
             "-> $result in ${SystemClock.elapsedRealtime() - startedAt}ms")
-        setStatus(context, manager, appWidgetId, describe(context, assignment, result))
-        holdUntilResting(context, manager, settings, appWidgetId)
+        // Still live — the window was just extended by this press — so keep the lit colours
+        // and only swap the status line.
+        redraw(context, manager, appWidgetId, armed = true, statusOverride = describe(context, assignment, result))
+        scheduleRest(context, manager, settings, appWidgetId)
     }
 
     private fun describe(context: Context, assignment: SlotAssignment, result: SendResult): String =
@@ -255,13 +276,6 @@ class TvRemoteWidget : AppWidgetProvider() {
             )
         }
 
-    private fun setStatus(context: Context, manager: AppWidgetManager, appWidgetId: Int, text: String) {
-        val views = WidgetLayout.entries.associateWith { layout ->
-            RemoteViews(context.packageName, layoutResource(layout))
-                .apply { setTextViewText(R.id.status, text) }
-        }
-        manager.partiallyUpdateAppWidget(appWidgetId, sized(views))
-    }
 
     companion object {
         private const val TAG = "TvRemocon"
@@ -304,6 +318,9 @@ class TvRemoteWidget : AppWidgetProvider() {
         /** Outlives any single broadcast, since goAsync() hands the work off. */
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        /** One pending resting-repaint per widget, so taps do not pile up waiters. */
+        private val resting = mutableMapOf<Int, Job>()
+
         fun refresh(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             manager.getAppWidgetIds(ComponentName(context, TvRemoteWidget::class.java))
@@ -311,73 +328,58 @@ class TvRemoteWidget : AppWidgetProvider() {
         }
 
         /**
-         * Rebuilds the whole view tree, which invalidates every click target on it.
-         *
-         * Reserved for the things that actually need it — setup finishing, a resize, a system
-         * update broadcast — because this launcher answers a tree replacement by replaying a
-         * click from the tree it just discarded. Bumping the generation is what makes that
-         * replay identifiable; waking and resting go through [paint] instead and leave the
-         * tree alone.
-         *
-         * Always drawn resting. If a partial update is ever lost the widget falls back to
-         * looking asleep, which is the safe direction: it can under-report being live, never
-         * over-report it.
+         * Structural repaint: setup finished, the widget was resized, the system asked for an
+         * update. Advances the generation, which retires every click target drawn before it —
+         * after a change of this kind an older click is describing a widget that no longer
+         * exists in that form.
          */
         fun render(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
             val settings = Settings(context)
-            val configured = settings.isConfigured && settings.remoteDeviceId(appWidgetId) != null
             val generation = settings.bumpRenderGeneration(appWidgetId)
-            Log.d(TAG, "render widget=$appWidgetId generation=$generation configured=$configured")
-
-            val views = WidgetLayout.entries.associateWith {
-                build(context, appWidgetId, it, settings, configured, generation)
-            }
-            manager.updateAppWidget(appWidgetId, sized(views))
+            val armed = settings.armedUntil(appWidgetId) > SystemClock.elapsedRealtime()
+            Log.d(TAG, "render widget=$appWidgetId generation=$generation armed=$armed")
+            draw(context, manager, appWidgetId, settings, generation, armed, statusOverride = null)
         }
 
         /**
-         * Switches the widget between its resting and live looks without touching the view
-         * tree — only backgrounds, text colours and the status line, which are the two
-         * styling calls RemoteViews allows at runtime plus a text change.
+         * Visual redraw for waking and resting. Same tree, same click targets, same
+         * generation — only the colours and the status line differ.
          *
-         * Click targets are deliberately left as they are. They were installed by [render]
-         * and stay valid, so nothing here can trigger the launcher's replay.
+         * Deliberately not a partial update: `partiallyUpdateAppWidget` does not appear to
+         * apply to the size-mapped RemoteViews this widget hands the launcher, and using it
+         * left the widget stuck at whatever it last looked like. And deliberately not a
+         * generation bump: rebuilding identical click targets must not invalidate a press
+         * that is already in flight.
          */
-        private fun paint(
+        private fun redraw(
             context: Context,
             manager: AppWidgetManager,
             appWidgetId: Int,
             armed: Boolean,
+            statusOverride: String? = null,
         ) {
             val settings = Settings(context)
-            if (!settings.isConfigured || settings.remoteDeviceId(appWidgetId) == null) return
-
-            val views = WidgetLayout.entries.associateWith { layout ->
-                val slots = settings.slots(appWidgetId, layout)
-                RemoteViews(context.packageName, layoutResource(layout)).apply {
-                    for (slot in 0 until layout.slotCount) {
-                        if (slots[slot] == null) continue
-                        val id = slotViewId(context, layout, slot) ?: continue
-                        val style = layout.cells[slot].style
-                        setInt(
-                            id,
-                            "setBackgroundResource",
-                            drawableId(context, if (armed) style.background else style.idleBackground),
-                        )
-                        setTextColor(
-                            id,
-                            colorOf(context, if (armed) style.textColor else style.idleTextColor),
-                        )
-                    }
-                    setTextViewText(
-                        R.id.status,
-                        if (armed) settings.remoteName(appWidgetId).orEmpty()
-                        else context.getString(R.string.widget_resting),
-                    )
-                }
-            }
-            manager.partiallyUpdateAppWidget(appWidgetId, sized(views))
+            val generation = settings.renderGeneration(appWidgetId)
+            Log.d(TAG, "redraw widget=$appWidgetId armed=$armed generation=$generation")
+            draw(context, manager, appWidgetId, settings, generation, armed, statusOverride)
         }
+
+        private fun draw(
+            context: Context,
+            manager: AppWidgetManager,
+            appWidgetId: Int,
+            settings: Settings,
+            generation: Int,
+            armed: Boolean,
+            statusOverride: String?,
+        ) {
+            val configured = settings.isConfigured && settings.remoteDeviceId(appWidgetId) != null
+            val views = WidgetLayout.entries.associateWith {
+                build(context, appWidgetId, it, settings, configured, generation, armed, statusOverride)
+            }
+            manager.updateAppWidget(appWidgetId, sized(views))
+        }
+
 
         /**
          * Lets the launcher pick the grid from the space it actually allocates.
@@ -404,6 +406,8 @@ class TvRemoteWidget : AppWidgetProvider() {
             settings: Settings,
             configured: Boolean,
             generation: Int,
+            armed: Boolean,
+            statusOverride: String?,
         ): RemoteViews {
             val slots = if (configured) settings.slots(appWidgetId, layout) else emptyMap()
             val views = RemoteViews(context.packageName, layoutResource(layout))
@@ -440,9 +444,18 @@ class TvRemoteWidget : AppWidgetProvider() {
                 views.setTextViewText(id, assignment.label)
 
                 val style = layout.cells[slot].style
-                // Drawn resting; paint() takes it from here.
-                views.setInt(id, "setBackgroundResource", drawableId(context, style.idleBackground))
-                views.setTextColor(id, colorOf(context, style.idleTextColor))
+                // setBackgroundResource and setTextColor are the only styling RemoteViews
+                // allows at runtime, which is why each style ships a prepared idle twin
+                // rather than being tinted here.
+                views.setInt(
+                    id,
+                    "setBackgroundResource",
+                    drawableId(context, if (armed) style.background else style.idleBackground),
+                )
+                views.setTextColor(
+                    id,
+                    colorOf(context, if (armed) style.textColor else style.idleTextColor),
+                )
                 // The same click target whether resting or live. Whether it sends or merely
                 // wakes is decided when it arrives, against the stored deadline.
                 views.setOnClickPendingIntent(
@@ -451,7 +464,12 @@ class TvRemoteWidget : AppWidgetProvider() {
                 )
             }
 
-            views.setTextViewText(R.id.status, context.getString(R.string.widget_resting))
+            views.setTextViewText(
+                R.id.status,
+                statusOverride
+                    ?: if (armed) settings.remoteName(appWidgetId).orEmpty()
+                    else context.getString(R.string.widget_resting),
+            )
             views.setOnClickPendingIntent(
                 R.id.status,
                 pressIntent(context, appWidgetId, layout, SLOT_STATUS, generation),
