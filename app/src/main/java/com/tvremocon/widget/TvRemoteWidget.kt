@@ -22,6 +22,7 @@ import com.tvremocon.ui.WidgetSetupActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -69,8 +70,23 @@ class TvRemoteWidget : AppWidgetProvider() {
             if (intent.getBooleanExtra(EXTRA_DISARM, false)) {
                 // The window has closed; just repaint it as resting.
                 render(context, manager, appWidgetId)
-            } else {
-                arm(context, manager, settings, appWidgetId, now)
+                return
+            }
+            // Live immediately — the deadline is what a press is checked against — but repaint
+            // after a beat. A view keeps its pressed state for a moment after the finger
+            // lifts, and swapping in a background that has a pressed colour while that is
+            // still set makes the woken key flash blue. Waiting out the tail avoids it
+            // without suppressing the press feedback that the same drawable provides later.
+            settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
+            val pendingArm = goAsync()
+            scope.launch {
+                try {
+                    delay(PRESSED_STATE_TAIL_MS)
+                    render(context, manager, appWidgetId)
+                    scheduleDisarmRedraw(context, appWidgetId)
+                } finally {
+                    pendingArm.finish()
+                }
             }
             return
         }
@@ -84,7 +100,17 @@ class TvRemoteWidget : AppWidgetProvider() {
         // can go stale — the process dies, no redraw happens — and a stale picture must never
         // be able to fire the TV. An expired tap re-arms instead of sending.
         if (settings.armedUntil(appWidgetId) <= now) {
-            arm(context, manager, settings, appWidgetId, now)
+            settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
+            val pendingArm = goAsync()
+            scope.launch {
+                try {
+                    delay(PRESSED_STATE_TAIL_MS)
+                    render(context, manager, appWidgetId)
+                    scheduleDisarmRedraw(context, appWidgetId)
+                } finally {
+                    pendingArm.finish()
+                }
+            }
             return
         }
         settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
@@ -102,19 +128,6 @@ class TvRemoteWidget : AppWidgetProvider() {
                 pending.finish()
             }
         }
-    }
-
-    /** Wakes the widget for a while and redraws it as live. Sends nothing. */
-    private fun arm(
-        context: Context,
-        manager: AppWidgetManager,
-        settings: Settings,
-        appWidgetId: Int,
-        now: Long,
-    ) {
-        settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
-        render(context, manager, appWidgetId)
-        scheduleDisarmRedraw(context, appWidgetId)
     }
 
     /**
@@ -227,6 +240,13 @@ class TvRemoteWidget : AppWidgetProvider() {
          * thumb goes back to sleep before the next accidental touch.
          */
         private const val ARMED_WINDOW_MS = 12_000L
+
+        /**
+         * How long a view holds its pressed state after the finger lifts. Android keeps it
+         * briefly on purpose so a quick tap still shows feedback; this waits it out before
+         * installing backgrounds that have a pressed colour.
+         */
+        private const val PRESSED_STATE_TAIL_MS = 220L
         private const val INVALID_ID = AppWidgetManager.INVALID_APPWIDGET_ID
 
         /**
