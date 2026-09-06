@@ -29,6 +29,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Phase 2 harness. exported so it can be launched over adb during development;
+          it takes no parameters from the intent, so nothing can be driven from outside.
+        -->
+        <activity
+            android:name=".ui.DebugActivity"
+            android:exported="true"
+            android:label="Debug"
+            android:theme="@style/Theme.TVRemocon" />
     </application>
 
 </manifest>
