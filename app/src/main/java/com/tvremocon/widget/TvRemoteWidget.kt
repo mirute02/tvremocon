@@ -33,6 +33,14 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * Everything is scoped to appWidgetId: the assignments, the status line, and the identity of
  * each PendingIntent. Two remotes on one home screen must not press each other's buttons.
+ *
+ * **Full repaints are rare on purpose.** Replacing the view tree makes this launcher
+ * re-deliver a click that belonged to the tree being replaced, roughly 10-30ms later. With
+ * the resting look painted by a full repaint that was self-sustaining: repaint, replayed
+ * click, wake, five seconds, repaint again — a loop that ran for over a minute and swallowed
+ * every real tap. So waking and resting are partial updates, which change colours and text
+ * without rebuilding anything clickable, and every PendingIntent carries the generation it
+ * was drawn in so a replayed click from an older tree is recognised and dropped.
  */
 class TvRemoteWidget : AppWidgetProvider() {
 
@@ -46,7 +54,8 @@ class TvRemoteWidget : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: Bundle,
     ) {
-        // Resizing is how the user chooses between the compact grid and the number pad.
+        // Resizing is how the user chooses between the compact grid and the number pad, and
+        // it is one of the few things that genuinely needs the tree rebuilt.
         render(context, manager, appWidgetId)
     }
 
@@ -57,56 +66,49 @@ class TvRemoteWidget : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action != ACTION_PRESS && intent.action != ACTION_ARM) return
+        if (intent.action != ACTION_PRESS) return
 
         val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, INVALID_ID)
         if (appWidgetId == INVALID_ID) return
+
         val manager = AppWidgetManager.getInstance(context)
         val settings = Settings(context)
         val now = SystemClock.elapsedRealtime()
 
-        if (intent.action == ACTION_ARM) {
-            // Live immediately — the deadline is what a press is checked against — but repaint
-            // after a beat. A view keeps its pressed state for a moment after the finger
-            // lifts, and swapping in a background that has a pressed colour while that is
-            // still set makes the woken key flash blue. Waiting out the tail avoids it
-            // without suppressing the press feedback that the same drawable provides later.
-            settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
-            val pendingArm = goAsync()
-            scope.launch {
-                try {
-                    delay(PRESSED_STATE_TAIL_MS)
-                    render(context, manager, appWidgetId)
-                    holdUntilResting(context, manager, settings, appWidgetId)
-                } finally {
-                    pendingArm.finish()
-                }
-            }
+        // Checked before anything else. A click carrying an older generation came from a view
+        // tree that has since been replaced, which means the launcher replayed it rather than
+        // the user pressing anything — acting on it would fire the TV unbidden.
+        val generation = intent.getIntExtra(EXTRA_GENERATION, -1)
+        val current = settings.renderGeneration(appWidgetId)
+        if (generation != current) {
+            Log.w(TAG, "press widget=$appWidgetId ignored: generation $generation, current $current")
             return
         }
 
         val slot = intent.getIntExtra(EXTRA_SLOT, -1)
         // The grids have separate slot numbering, so the layout is part of the address.
         val layout = WidgetLayout.entries.firstOrNull { it.id == intent.getStringExtra(EXTRA_LAYOUT) }
-        if (slot < 0 || layout == null) return
-
-        // Armed-ness is decided here, not by which PendingIntent was drawn. The dimmed look
-        // can go stale — the process dies, no redraw happens — and a stale picture must never
-        // be able to fire the TV. An expired tap re-arms instead of sending.
-        if (settings.armedUntil(appWidgetId) <= now) {
-            settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
-            val pendingArm = goAsync()
-            scope.launch {
-                try {
-                    delay(PRESSED_STATE_TAIL_MS)
-                    render(context, manager, appWidgetId)
-                    holdUntilResting(context, manager, settings, appWidgetId)
-                } finally {
-                    pendingArm.finish()
-                }
-            }
+        if (layout == null) {
+            Log.w(TAG, "press widget=$appWidgetId ignored: layout=${intent.getStringExtra(EXTRA_LAYOUT)}")
             return
         }
+
+        // Armed-ness is decided here, not by what is drawn. The painted state can go stale —
+        // the process is killed mid-window and no repaint happens — and a stale picture must
+        // never be able to fire the TV. A tap after the window closes wakes instead of sending.
+        if (settings.armedUntil(appWidgetId) <= now) {
+            Log.d(TAG, "press widget=$appWidgetId ${layout.id}/$slot arrived while resting — waking")
+            wake(context, manager, settings, appWidgetId, now)
+            return
+        }
+
+        // The status line's own slot only ever wakes; there is no key behind it.
+        if (slot < 0) {
+            settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
+            return
+        }
+
+        Log.d(TAG, "press widget=$appWidgetId ${layout.id}/$slot accepted while armed")
         settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
 
         // The deadline starts now, not when the coroutine gets scheduled. goAsync() buys
@@ -125,21 +127,48 @@ class TvRemoteWidget : AppWidgetProvider() {
     }
 
     /**
-     * Waits out the armed window and repaints the widget as resting.
+     * Makes the widget live and paints it so, then waits out the window.
      *
-     * An alarm was the obvious mechanism and it did not work: inexact alarms are deferred
-     * heavily for background apps on Android 12+, and this device's vendor power management
-     * freezes the process on top of that, so the widget kept looking live long after it had
-     * stopped accepting presses. Holding the broadcast open and waiting is deterministic for
-     * as long as the process survives, which is the case that matters — the user is looking
-     * at the widget they just tapped.
+     * The window opens immediately — a press is checked against the deadline, not against
+     * what is drawn — but the paint waits a beat. A view keeps its pressed state for a moment
+     * after the finger lifts, and installing a background that has a pressed colour while
+     * that is still set makes the woken key flash.
+     */
+    private fun wake(
+        context: Context,
+        manager: AppWidgetManager,
+        settings: Settings,
+        appWidgetId: Int,
+        now: Long,
+    ) {
+        val alreadyLive = settings.armedUntil(appWidgetId) > now
+        settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
+        if (alreadyLive) return // extend only; a second hold racing the first is how loops start
+
+        val pending = goAsync()
+        scope.launch {
+            try {
+                delay(PRESSED_STATE_TAIL_MS)
+                paint(context, manager, appWidgetId, armed = true)
+                holdUntilResting(context, manager, settings, appWidgetId)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    /**
+     * Waits out the armed window, then paints the widget as resting.
+     *
+     * An alarm was the obvious mechanism and does not work here: inexact alarms are deferred
+     * heavily for background apps, and this device's vendor power management freezes the
+     * process about six seconds after it drops to the background. Holding the broadcast open
+     * and waiting is deterministic for as long as the process survives, which is the case
+     * that matters — the user is looking at the widget they just tapped. It is also why the
+     * window is five seconds: fifteen was tried, and the repaint never arrived.
      *
      * A later press extends the deadline, so the wait is re-checked rather than assumed;
      * whichever hold outlives the others does the repaint and the rest do nothing.
-     *
-     * Still only cosmetic. If the process is killed first the widget looks armed while it is
-     * not, and a tap in that state re-arms instead of sending, because a press is checked
-     * against the stored deadline and never against what is drawn.
      */
     private suspend fun holdUntilResting(
         context: Context,
@@ -147,17 +176,13 @@ class TvRemoteWidget : AppWidgetProvider() {
         settings: Settings,
         appWidgetId: Int,
     ) {
-        val enteredAt = SystemClock.elapsedRealtime()
-        Log.d(TAG, "hold widget=$appWidgetId waiting ${settings.armedUntil(appWidgetId) - enteredAt}ms")
         while (true) {
             val remaining = settings.armedUntil(appWidgetId) - SystemClock.elapsedRealtime()
             if (remaining <= 0) break
             delay(remaining)
         }
-        // If this line never appears, the process was frozen or killed before the window
-        // closed, and the widget is still showing its armed colours while resting.
-        Log.d(TAG, "hold widget=$appWidgetId resting after ${SystemClock.elapsedRealtime() - enteredAt}ms")
-        render(context, manager, appWidgetId)
+        Log.d(TAG, "widget=$appWidgetId resting")
+        paint(context, manager, appWidgetId, armed = false)
     }
 
     private suspend fun press(
@@ -168,13 +193,21 @@ class TvRemoteWidget : AppWidgetProvider() {
         deadline: Long,
     ) {
         val settings = Settings(context)
-        val assignment = settings.slots(appWidgetId, layout)[slot] ?: return
+        val assignment = settings.slots(appWidgetId, layout)[slot]
         val manager = AppWidgetManager.getInstance(context)
+        if (assignment == null) {
+            // Logged rather than returned silently, which made a dead button and a dead app
+            // look identical from outside.
+            Log.w(TAG, "press widget=$appWidgetId ${layout.id}/$slot has no assignment " +
+                "(${settings.slots(appWidgetId, layout).size} slots stored)")
+            holdUntilResting(context, manager, settings, appWidgetId)
+            return
+        }
         val startedAt = SystemClock.elapsedRealtime()
 
-        // No "sending" update: it costs a full RemoteViews build and an IPC round trip
-        // before the request even starts, which is pure latency on the one path that has to
-        // feel immediate. The button's own pressed state is the acknowledgement.
+        // No "sending" update: it costs an IPC round trip before the request even starts,
+        // which is pure latency on the one path that has to feel immediate. The button's own
+        // pressed state is the acknowledgement.
 
         val remaining = deadline - SystemClock.elapsedRealtime()
         val result = if (remaining <= 0) {
@@ -191,8 +224,8 @@ class TvRemoteWidget : AppWidgetProvider() {
             } ?: SendResult.Unknown(context.getString(R.string.status_timed_out))
         }
 
-        // One line per tap. Two lines for one physical press would mean the launcher
-        // delivered the click twice; a large elapsed time points at the transport instead.
+        // One line per tap. Two lines for one physical press would mean the click was
+        // delivered twice; a large elapsed time points at the transport instead.
         Log.i(TAG, "press widget=$appWidgetId ${layout.id}/$slot ${assignment.label} " +
             "-> $result in ${SystemClock.elapsedRealtime() - startedAt}ms")
         setStatus(context, manager, appWidgetId, describe(context, assignment, result))
@@ -223,7 +256,6 @@ class TvRemoteWidget : AppWidgetProvider() {
         }
 
     private fun setStatus(context: Context, manager: AppWidgetManager, appWidgetId: Int, text: String) {
-        // Redrawing the whole widget would rebuild every PendingIntent for a status change.
         val views = WidgetLayout.entries.associateWith { layout ->
             RemoteViews(context.packageName, layoutResource(layout))
                 .apply { setTextViewText(R.id.status, text) }
@@ -236,16 +268,21 @@ class TvRemoteWidget : AppWidgetProvider() {
         private const val ACTION_PRESS = "com.tvremocon.PRESS"
         private const val EXTRA_SLOT = "slot"
         private const val EXTRA_LAYOUT = "layout"
-        private const val ACTION_ARM = "com.tvremocon.ARM"
+        private const val EXTRA_GENERATION = "generation"
+
+        /** The status line's pseudo-slot. It has no key behind it and only ever wakes. */
+        @androidx.annotation.VisibleForTesting
+        internal const val SLOT_STATUS = -1
 
         /**
          * How long one tap keeps the widget live.
          *
-         * Five seconds is not only a taste decision. This device's vendor power management
-         * freezes the app about six seconds after it drops to the background — its own logs
-         * show `FZ ... reason: Bg` that soon after an unfreeze — and a frozen process runs no
-         * code, so a longer window would expire while the widget was still painted as armed.
-         * Staying inside that margin is what makes the resting repaint actually happen.
+         * Five seconds, because this device's vendor power management freezes a backgrounded
+         * app about six seconds in and a frozen process cannot run the repaint. Fifteen was
+         * tried on the theory that holding the broadcast open would keep the process out of
+         * that state; it does not, and the widget stayed lit. The window has to be short
+         * enough that the repaint reliably happens, or the widget goes back to lying about
+         * whether it is armed.
          */
         private const val ARMED_WINDOW_MS = 5_000L
 
@@ -273,15 +310,73 @@ class TvRemoteWidget : AppWidgetProvider() {
                 .forEach { render(context, manager, it) }
         }
 
+        /**
+         * Rebuilds the whole view tree, which invalidates every click target on it.
+         *
+         * Reserved for the things that actually need it — setup finishing, a resize, a system
+         * update broadcast — because this launcher answers a tree replacement by replaying a
+         * click from the tree it just discarded. Bumping the generation is what makes that
+         * replay identifiable; waking and resting go through [paint] instead and leave the
+         * tree alone.
+         *
+         * Always drawn resting. If a partial update is ever lost the widget falls back to
+         * looking asleep, which is the safe direction: it can under-report being live, never
+         * over-report it.
+         */
         fun render(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
             val settings = Settings(context)
             val configured = settings.isConfigured && settings.remoteDeviceId(appWidgetId) != null
-            val armed = settings.armedUntil(appWidgetId) > SystemClock.elapsedRealtime()
+            val generation = settings.bumpRenderGeneration(appWidgetId)
+            Log.d(TAG, "render widget=$appWidgetId generation=$generation configured=$configured")
 
             val views = WidgetLayout.entries.associateWith {
-                build(context, appWidgetId, it, settings, configured, armed)
+                build(context, appWidgetId, it, settings, configured, generation)
             }
             manager.updateAppWidget(appWidgetId, sized(views))
+        }
+
+        /**
+         * Switches the widget between its resting and live looks without touching the view
+         * tree — only backgrounds, text colours and the status line, which are the two
+         * styling calls RemoteViews allows at runtime plus a text change.
+         *
+         * Click targets are deliberately left as they are. They were installed by [render]
+         * and stay valid, so nothing here can trigger the launcher's replay.
+         */
+        private fun paint(
+            context: Context,
+            manager: AppWidgetManager,
+            appWidgetId: Int,
+            armed: Boolean,
+        ) {
+            val settings = Settings(context)
+            if (!settings.isConfigured || settings.remoteDeviceId(appWidgetId) == null) return
+
+            val views = WidgetLayout.entries.associateWith { layout ->
+                val slots = settings.slots(appWidgetId, layout)
+                RemoteViews(context.packageName, layoutResource(layout)).apply {
+                    for (slot in 0 until layout.slotCount) {
+                        if (slots[slot] == null) continue
+                        val id = slotViewId(context, layout, slot) ?: continue
+                        val style = layout.cells[slot].style
+                        setInt(
+                            id,
+                            "setBackgroundResource",
+                            drawableId(context, if (armed) style.background else style.idleBackground),
+                        )
+                        setTextColor(
+                            id,
+                            colorOf(context, if (armed) style.textColor else style.idleTextColor),
+                        )
+                    }
+                    setTextViewText(
+                        R.id.status,
+                        if (armed) settings.remoteName(appWidgetId).orEmpty()
+                        else context.getString(R.string.widget_resting),
+                    )
+                }
+            }
+            manager.partiallyUpdateAppWidget(appWidgetId, sized(views))
         }
 
         /**
@@ -308,7 +403,7 @@ class TvRemoteWidget : AppWidgetProvider() {
             layout: WidgetLayout,
             settings: Settings,
             configured: Boolean,
-            armed: Boolean,
+            generation: Int,
         ): RemoteViews {
             val slots = if (configured) settings.slots(appWidgetId, layout) else emptyMap()
             val views = RemoteViews(context.packageName, layoutResource(layout))
@@ -331,11 +426,6 @@ class TvRemoteWidget : AppWidgetProvider() {
                 return views
             }
 
-            // While resting, every key wakes the widget instead of firing. One shared
-            // PendingIntent: they all do the same thing, and building forty of them to say so
-            // would be waste.
-            val wake = armIntent(context, appWidgetId)
-
             for (slot in 0 until layout.slotCount) {
                 val id = slotViewId(context, layout, slot) ?: continue
                 val assignment = slots[slot]
@@ -350,30 +440,22 @@ class TvRemoteWidget : AppWidgetProvider() {
                 views.setTextViewText(id, assignment.label)
 
                 val style = layout.cells[slot].style
-                // setBackgroundResource and setTextColor are the only styling RemoteViews
-                // allows at runtime, which is why each style ships a prepared idle twin
-                // rather than being tinted here.
-                views.setInt(
-                    id,
-                    "setBackgroundResource",
-                    drawableId(context, if (armed) style.background else style.idleBackground),
-                )
-                views.setTextColor(
-                    id,
-                    colorOf(context, if (armed) style.textColor else style.idleTextColor),
-                )
+                // Drawn resting; paint() takes it from here.
+                views.setInt(id, "setBackgroundResource", drawableId(context, style.idleBackground))
+                views.setTextColor(id, colorOf(context, style.idleTextColor))
+                // The same click target whether resting or live. Whether it sends or merely
+                // wakes is decided when it arrives, against the stored deadline.
                 views.setOnClickPendingIntent(
                     id,
-                    if (armed) pressIntent(context, appWidgetId, layout, slot) else wake,
+                    pressIntent(context, appWidgetId, layout, slot, generation),
                 )
             }
 
-            views.setTextViewText(
+            views.setTextViewText(R.id.status, context.getString(R.string.widget_resting))
+            views.setOnClickPendingIntent(
                 R.id.status,
-                if (armed) settings.remoteName(appWidgetId).orEmpty()
-                else context.getString(R.string.widget_resting),
+                pressIntent(context, appWidgetId, layout, SLOT_STATUS, generation),
             )
-            views.setOnClickPendingIntent(R.id.status, wake)
             return views
         }
 
@@ -381,20 +463,6 @@ class TvRemoteWidget : AppWidgetProvider() {
             WidgetLayout.COMPACT -> R.layout.widget_remote_compact
             WidgetLayout.WIDE -> R.layout.widget_remote_wide
             WidgetLayout.FULL -> R.layout.widget_remote_full
-        }
-
-        private fun armIntent(context: Context, appWidgetId: Int): PendingIntent {
-            val intent = Intent(context, TvRemoteWidget::class.java)
-                .setAction(ACTION_ARM)
-                .setData(Uri.parse("tvremocon://arm/$appWidgetId"))
-                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            return PendingIntent.getBroadcast(
-                context,
-                // Kept clear of the per-slot codes, which run from appWidgetId * n upwards.
-                Int.MIN_VALUE + appWidgetId,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
         }
 
         @Suppress("DiscouragedApi")
@@ -418,29 +486,41 @@ class TvRemoteWidget : AppWidgetProvider() {
          * component — extras are ignored. Two widgets would therefore share one PendingIntent
          * per slot if only extras differed, and pressing one would send the other's key.
          *
-         * So identity is carried three ways: a unique requestCode, a data URI naming the
-         * widget and slot, and the extras the receiver actually reads.
+         * Identity is carried three ways: a unique requestCode, a data URI naming the widget,
+         * grid, slot and generation, and the extras the receiver actually reads. The
+         * generation in the URI is what makes a replayed click from a discarded view tree a
+         * different PendingIntent rather than the same one fired twice.
          */
         private fun pressIntent(
             context: Context,
             appWidgetId: Int,
             layout: WidgetLayout,
             slot: Int,
+            generation: Int,
         ): PendingIntent {
             val intent = Intent(context, TvRemoteWidget::class.java)
                 .setAction(ACTION_PRESS)
-                .setData(Uri.parse("tvremocon://widget/$appWidgetId/${layout.id}/$slot"))
+                .setData(Uri.parse("tvremocon://widget/$appWidgetId/${layout.id}/$slot/g$generation"))
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                 .putExtra(EXTRA_LAYOUT, layout.id)
                 .putExtra(EXTRA_SLOT, slot)
+                .putExtra(EXTRA_GENERATION, generation)
             return PendingIntent.getBroadcast(
                 context,
-                // Distinct per widget, per grid, per slot. The data URI above carries the same
-                // three, since PendingIntent equality ignores extras.
-                (appWidgetId * WidgetLayout.entries.size + layout.ordinal) * WidgetLayout.MAX_SLOTS + slot,
+                // Distinct per widget, per grid, per slot. The status line's pseudo-slot sits
+                // just past the real ones rather than at a negative offset.
+                requestCode(appWidgetId, layout, slot),
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
+        }
+
+        /** Visible for tests: a collision here would make one remote fire another's keys. */
+        @androidx.annotation.VisibleForTesting
+        internal fun requestCode(appWidgetId: Int, layout: WidgetLayout, slot: Int): Int {
+            val index = if (slot == SLOT_STATUS) WidgetLayout.MAX_SLOTS else slot
+            return (appWidgetId * WidgetLayout.entries.size + layout.ordinal) *
+                (WidgetLayout.MAX_SLOTS + 1) + index
         }
 
         private fun setupIntent(context: Context, appWidgetId: Int): PendingIntent {

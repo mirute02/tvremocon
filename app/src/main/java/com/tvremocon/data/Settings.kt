@@ -51,6 +51,26 @@ class Settings(context: Context) {
         prefs.edit().putLong(keyArmed(appWidgetId), elapsedRealtime).apply()
     }
 
+    /**
+     * Counts full repaints of this widget.
+     *
+     * The launcher re-delivers a click belonging to the previous view tree shortly after the
+     * tree is replaced. Every PendingIntent carries the generation it was drawn in, so a
+     * replayed click from an older tree can be recognised and dropped instead of being
+     * mistaken for a tap.
+     */
+    fun renderGeneration(appWidgetId: Int): Int =
+        prefs.getInt(keyGeneration(appWidgetId), 0)
+
+    /** Called by the full repaint, which is the only thing that invalidates old click targets. */
+    fun bumpRenderGeneration(appWidgetId: Int): Int {
+        val next = renderGeneration(appWidgetId) + 1
+        // commit, not apply: the PendingIntents built straight after this must not be able to
+        // reference a generation the next broadcast cannot yet read back.
+        prefs.edit().putInt(keyGeneration(appWidgetId), next).commit()
+        return next
+    }
+
     fun remoteDeviceId(appWidgetId: Int): String? =
         prefs.getString(keyRemote(appWidgetId), null)
 
@@ -100,11 +120,13 @@ class Settings(context: Context) {
             .remove(keyRemote(appWidgetId))
             .remove(keyRemoteName(appWidgetId))
             .remove(keyArmed(appWidgetId))
+            .remove(keyGeneration(appWidgetId))
         WidgetLayout.entries.forEach { edit.remove(keySlots(appWidgetId, it)) }
         edit.apply()
     }
 
     private fun keyArmed(id: Int) = "widget.$id.armed_until"
+    private fun keyGeneration(id: Int) = "widget.$id.render_generation"
     private fun keyRemote(id: Int) = "widget.$id.remote"
     private fun keyRemoteName(id: Int) = "widget.$id.remote_name"
     /**
