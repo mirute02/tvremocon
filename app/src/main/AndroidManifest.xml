@@ -52,6 +52,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Hub address and credentials, reachable from the app rather than only while
+             placing a widget. Not exported: it has a password field. -->
+        <activity
+            android:name=".ui.HubSetupActivity"
+            android:exported="false"
+            android:label="@string/main_hub_setup"
+            android:theme="@style/Theme.TVRemocon" />
+
         <!-- Not exported: presses arrive as explicit intents from our own PendingIntents,
              so nothing outside the app can ask it to send a key. -->
         <receiver

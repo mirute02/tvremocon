@@ -217,6 +217,7 @@ class TvRemoteWidget : AppWidgetProvider() {
                     views.setOnClickPendingIntent(id, setup)
                 }
                 views.setTextViewText(R.id.status, context.getString(R.string.widget_tap_to_setup))
+                views.setOnClickPendingIntent(R.id.status, setup)
                 return views
             }
 

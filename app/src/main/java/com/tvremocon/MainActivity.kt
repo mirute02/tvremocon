@@ -13,6 +13,7 @@ import com.tvremocon.data.SecretStore
 import com.tvremocon.data.Settings
 import com.tvremocon.net.LocalNetworkAccess
 import com.tvremocon.ui.DebugActivity
+import com.tvremocon.ui.HubSetupActivity
 import com.tvremocon.widget.TvRemoteWidget
 
 /**
@@ -41,6 +42,14 @@ class MainActivity : AppCompatActivity() {
                         orientation = LinearLayout.VERTICAL
                         setPadding(dp(20), dp(20), dp(20), dp(20))
                         addView(report)
+                        addView(
+                            Button(this@MainActivity).apply {
+                                text = getString(R.string.main_hub_setup)
+                                setOnClickListener {
+                                    startActivity(Intent(this@MainActivity, HubSetupActivity::class.java))
+                                }
+                            }
+                        )
                         addView(
                             Button(this@MainActivity).apply {
                                 text = getString(R.string.main_open_debug)

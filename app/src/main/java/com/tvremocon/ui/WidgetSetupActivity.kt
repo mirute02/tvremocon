@@ -81,6 +81,14 @@ class WidgetSetupActivity : AppCompatActivity() {
 
         val settings = Settings(this)
 
+        // The hub and its credentials belong to the account, not to this widget. If they are
+        // already stored, placing a widget only has to choose which remote it drives — no
+        // password prompt triggered by dropping something on the home screen.
+        if (settings.isConfigured && SecretStore(this).hasAuthHash()) {
+            showRemotePickerOnly(settings)
+            return
+        }
+
         status = TextView(this).apply { setPadding(0, 0, 0, dp(12)) }
         host = EditText(this).apply {
             hint = getString(com.tvremocon.R.string.setup_hint_host)
@@ -127,6 +135,82 @@ class WidgetSetupActivity : AppCompatActivity() {
                 )
             }
         )
+    }
+
+    /** Hub already known: skip straight to the remote list. */
+    private fun showRemotePickerOnly(settings: Settings) {
+        status = TextView(this).apply { setPadding(0, 0, 0, dp(12)) }
+        content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Present but unused; connect() reads them and they stay empty, so the stored hash
+        // is what authenticates.
+        host = EditText(this).apply { setText(settings.host.orEmpty()) }
+        email = EditText(this)
+        password = EditText(this)
+        authHashInput = EditText(this)
+
+        setContentView(
+            ScrollView(this).apply {
+                addView(
+                    LinearLayout(this@WidgetSetupActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(16), dp(16), dp(16), dp(16))
+                        addView(status)
+                        addView(
+                            Button(this@WidgetSetupActivity).apply {
+                                text = getString(com.tvremocon.R.string.setup_change_hub)
+                                setOnClickListener {
+                                    startActivity(Intent(this@WidgetSetupActivity, HubSetupActivity::class.java))
+                                }
+                            }
+                        )
+                        addView(content)
+                    }
+                )
+            }
+        )
+        loadRemotes()
+    }
+
+    /** Lists the hub's remotes using the stored credentials. */
+    private fun loadRemotes() {
+        val settings = Settings(this)
+        val network = wifiOrComplain() ?: return
+        val endpoint = HubEndpoint.of(settings.host.orEmpty()) ?: run {
+            status.text = getString(com.tvremocon.R.string.setup_bad_host)
+            return
+        }
+        val authHash = SecretStore(this).authHash() ?: run {
+            // The Keystore key is dropped when the screen lock changes, so this is a normal
+            // state, not a crash: ask for the password again.
+            startActivity(Intent(this, HubSetupActivity::class.java))
+            finish()
+            return
+        }
+
+        status.text = getString(com.tvremocon.R.string.setup_connecting, endpoint.toString())
+        lifecycleScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val hubClient = TapoIrHub(
+                        KlapTransport(endpoint, authHash, KlapTransport.httpClient(network.socketFactory))
+                    )
+                    hubClient.deviceInfo() to hubClient.getRemotes()
+                }
+            }
+            outcome.onSuccess { (info, remotes) ->
+                val usable = remotes.filterNot(IrRemote::isAirConditioner)
+                status.text = getString(
+                    com.tvremocon.R.string.setup_pick_remote, info.nickname, info.model, usable.size
+                )
+                content.removeAllViews()
+                usable.forEach(::addRemoteChoice)
+            }.onFailure { e ->
+                Log.w(TAG, "remote list failed", e)
+                status.text = getString(
+                    com.tvremocon.R.string.setup_failed, e.javaClass.simpleName, e.message.orEmpty()
+                )
+            }
+        }
     }
 
     private fun wifiOrComplain(): Network? {

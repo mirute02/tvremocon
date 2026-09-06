@@ -27,6 +27,7 @@
     <string name="main_widget_count">ウィジェット %1$d 個</string>
     <string name="main_widget_unconfigured">未設定（タップで設定）</string>
     <string name="main_how_to_add">ホーム画面を長押し → ウィジェット → TV Remocon で追加できます。大きくすると数字キーが出ます。</string>
+    <string name="main_hub_setup">ハブと認証情報の設定</string>
     <string name="main_open_debug">キーを個別に試す（デバッグ）</string>
     <string name="main_refresh_widgets">ウィジェットを再描画</string>
 
@@ -51,6 +52,9 @@
     <string name="setup_failed">接続失敗\n%1$s: %2$s</string>
     <string name="setup_missing_keys">設定しました。\n\nこのリモコンに無いキーが %1$d 個あり、そのボタンは空白になります:\n%2$s</string>
     <string name="setup_finish">ウィジェットに戻る</string>
+    <string name="setup_save_hub">接続して保存</string>
+    <string name="setup_hub_saved">保存しました: %1$s (%2$s)\n\nウィジェットを追加すると、リモコンを選ぶだけで使えます。</string>
+    <string name="setup_change_hub">ハブ・認証情報を変更</string>
     <string name="setup_permission_granted">権限を取得しました</string>
     <string name="setup_permission_denied">権限が拒否されました。設定 → アプリ から許可してください</string>
 </resources>
