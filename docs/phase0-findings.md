@@ -6,7 +6,7 @@ Termux 上の `tools/KlapProbe.java` で実機に対して確認した事実。K
 
 | 項目 | 値 |
 |---|---|
-| host | `192.168.1.4`（tcp/80。LAN 内で唯一の KLAP 候補） |
+| host | LAN 内で唯一の KLAP 候補（tcp/80） |
 | model | **`TH11`**（`H110` ではない。日本向け型番表記と思われる） |
 | device_type | `SMART.TAPOHUB` |
 | fw_ver | `1.5.4 Build 260725 Rel.042648` / hw_ver `1.0` |

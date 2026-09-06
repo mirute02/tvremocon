@@ -33,7 +33,7 @@
     <string name="main_refresh_widgets">ウィジェットを再描画</string>
 
     <string name="setup_intro">ハブを探すか、IP アドレスを直接入力してください</string>
-    <string name="setup_hint_host">ハブの IP アドレス（例 192.168.1.4）</string>
+    <string name="setup_hint_host">ハブの IP アドレス（例 192.168.1.20）</string>
     <string name="setup_hint_email">TP-Link のメールアドレス（大文字小文字はそのまま）</string>
     <string name="setup_hint_password">パスワード</string>
     <string name="setup_hint_authhash">または authHash（64桁の16進）を貼り付け</string>

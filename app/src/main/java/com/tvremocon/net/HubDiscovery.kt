@@ -70,7 +70,7 @@ object HubDiscovery {
         }
     }
 
-    /** The `192.168.1.` part of this device's own address on [network]. */
+    /** The leading three octets of this device's own address on [network]. */
     private fun subnetPrefix(network: Network): String? {
         val address = network.let {
             java.net.NetworkInterface.getNetworkInterfaces()?.toList()

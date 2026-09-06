@@ -22,10 +22,10 @@ export TAPO_USER='you@example.com'
 read -s TAPO_PASS && export TAPO_PASS
 
 java -cp tools/json.jar tools/KlapProbe.java discover                 # KLAP 候補を探す
-java -cp tools/json.jar tools/KlapProbe.java info    --host 192.168.1.4   # 認証 + model 確定
-java -cp tools/json.jar tools/KlapProbe.java remotes --host 192.168.1.4   # → tools/fixtures/remotes.json
-java -cp tools/json.jar tools/KlapProbe.java send    --host 192.168.1.4 --device-id <id> --key <name>
-java -cp tools/json.jar tools/KlapProbe.java send    --host 192.168.1.4 --device-id <id> --key <name> --no-batch
+java -cp tools/json.jar tools/KlapProbe.java info    --host <hub-ip>   # 認証 + model 確定
+java -cp tools/json.jar tools/KlapProbe.java remotes --host <hub-ip>   # → tools/fixtures/remotes.json
+java -cp tools/json.jar tools/KlapProbe.java send    --host <hub-ip> --device-id <id> --key <name>
+java -cp tools/json.jar tools/KlapProbe.java send    --host <hub-ip> --device-id <id> --key <name> --no-batch
 java -cp tools/json.jar tools/KlapProbe.java vectors
 ```
 

@@ -53,7 +53,7 @@ class DebugActivity : AppCompatActivity() {
 
         status = TextView(this).apply {
             setPadding(0, 0, 0, dp(12))
-            text = "ハブ $HOST に接続します"
+            text = "保存済みのハブに接続します"
         }
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
@@ -101,8 +101,10 @@ class DebugActivity : AppCompatActivity() {
             return
         }
 
-        val endpoint = HubEndpoint.of(HOST) ?: run {
-            status.text = "$HOST はプライベート IPv4 ではありません"
+        // Whatever setup stored, rather than a value baked into the source.
+        val configured = com.tvremocon.data.Settings(this).host.orEmpty().ifEmpty { HOST }
+        val endpoint = HubEndpoint.of(configured) ?: run {
+            status.text = "ハブが未設定です。アプリの「ハブと認証情報の設定」から設定してください。"
             return
         }
         val network = LocalNetworkAccess.wifiNetwork(this) ?: return
@@ -221,7 +223,7 @@ class DebugActivity : AppCompatActivity() {
     private companion object {
         const val TAG = "TvRemocon"
 
-        /** Phase 2 only; discovery replaces this in Phase 3. */
-        const val HOST = "192.168.1.4"
+        /** Falls back to discovery when setup has not stored one yet. */
+        const val HOST = ""
     }
 }

@@ -1,6 +1,6 @@
 # サードパーティ ライセンス
 
-このプロジェクトが参照・翻案した外部実装と、その許諾条件。
+このプロジェクト自体は MIT（[LICENSE](LICENSE)）。以下は参照・翻案した外部実装と、その許諾条件。
 
 ## Loadst0ne/tapo-ir-hub (MIT)
 
@@ -51,6 +51,14 @@ https://github.com/python-kasa/python-kasa
 
 SMART エンベロープの形（`request_time_milis` の綴り、`terminal_uuid` の生成）と、
 資格情報がクラウドアカウントのものであることの確認に参照した。コードは取り込んでいない。
+
+## poordevcode/termux-android-studio (Apache-2.0)
+
+https://github.com/poordevcode/termux-android-studio
+
+`studio new --xml` が生成した Android プロジェクトの雛形（Gradle 設定、テーマ、ランチャー
+アイコンのベクタ）を出発点にしている。生成物は Android Studio の標準的な雛形に相当するもので、
+アプリのコードは全て書き下ろしだが、出所として記載しておく。
 
 ## 取り込んでいないもの
 

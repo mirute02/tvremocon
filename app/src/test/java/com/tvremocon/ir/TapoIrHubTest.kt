@@ -63,7 +63,7 @@ class TapoIrHubTest {
 
     @Test
     fun `unreachable hub is not sent, and is distinct from a lost response`() = runBlocking {
-        val (_, hub) = hub { throw HubUnreachableException("no handshake response from 192.168.1.4") }
+        val (_, hub) = hub { throw HubUnreachableException("no handshake response from 192.168.1.20") }
         val result = hub.sendKey("DEV1", "POWER")
         // The handshake never completed, so nothing was transmitted. This is the only failure
         // that lets the caller look for the hub elsewhere and press again — a lost response

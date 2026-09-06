@@ -2,7 +2,6 @@ package com.tvremocon.widget
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
-import android.app.AlarmManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
@@ -67,11 +66,6 @@ class TvRemoteWidget : AppWidgetProvider() {
         val now = SystemClock.elapsedRealtime()
 
         if (intent.action == ACTION_ARM) {
-            if (intent.getBooleanExtra(EXTRA_DISARM, false)) {
-                // The window has closed; just repaint it as resting.
-                render(context, manager, appWidgetId)
-                return
-            }
             // Live immediately — the deadline is what a press is checked against — but repaint
             // after a beat. A view keeps its pressed state for a moment after the finger
             // lifts, and swapping in a background that has a pressed colour while that is
@@ -83,7 +77,7 @@ class TvRemoteWidget : AppWidgetProvider() {
                 try {
                     delay(PRESSED_STATE_TAIL_MS)
                     render(context, manager, appWidgetId)
-                    scheduleDisarmRedraw(context, appWidgetId)
+                    holdUntilResting(context, manager, settings, appWidgetId)
                 } finally {
                     pendingArm.finish()
                 }
@@ -106,7 +100,7 @@ class TvRemoteWidget : AppWidgetProvider() {
                 try {
                     delay(PRESSED_STATE_TAIL_MS)
                     render(context, manager, appWidgetId)
-                    scheduleDisarmRedraw(context, appWidgetId)
+                    holdUntilResting(context, manager, settings, appWidgetId)
                 } finally {
                     pendingArm.finish()
                 }
@@ -131,29 +125,34 @@ class TvRemoteWidget : AppWidgetProvider() {
     }
 
     /**
-     * Best-effort redraw when the window closes, so the widget looks resting again.
+     * Waits out the armed window and repaints the widget as resting.
      *
-     * Purely cosmetic: an inexact alarm may run late or not at all under doze, and nothing
-     * depends on it — the press handler checks the deadline itself.
+     * An alarm was the obvious mechanism and it did not work: inexact alarms are deferred
+     * heavily for background apps on Android 12+, and this device's vendor power management
+     * freezes the process on top of that, so the widget kept looking live long after it had
+     * stopped accepting presses. Holding the broadcast open and waiting is deterministic for
+     * as long as the process survives, which is the case that matters — the user is looking
+     * at the widget they just tapped.
+     *
+     * A later press extends the deadline, so the wait is re-checked rather than assumed;
+     * whichever hold outlives the others does the repaint and the rest do nothing.
+     *
+     * Still only cosmetic. If the process is killed first the widget looks armed while it is
+     * not, and a tap in that state re-arms instead of sending, because a press is checked
+     * against the stored deadline and never against what is drawn.
      */
-    private fun scheduleDisarmRedraw(context: Context, appWidgetId: Int) {
-        val alarms = context.getSystemService(AlarmManager::class.java) ?: return
-        val intent = Intent(context, TvRemoteWidget::class.java)
-            .setAction(ACTION_ARM)
-            .setData(Uri.parse("tvremocon://disarm/$appWidgetId"))
-            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            .putExtra(EXTRA_DISARM, true)
-        val pending = PendingIntent.getBroadcast(
-            context,
-            Int.MAX_VALUE - appWidgetId,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        alarms.set(
-            AlarmManager.ELAPSED_REALTIME,
-            SystemClock.elapsedRealtime() + ARMED_WINDOW_MS + 250,
-            pending,
-        )
+    private suspend fun holdUntilResting(
+        context: Context,
+        manager: AppWidgetManager,
+        settings: Settings,
+        appWidgetId: Int,
+    ) {
+        while (true) {
+            val remaining = settings.armedUntil(appWidgetId) - SystemClock.elapsedRealtime()
+            if (remaining <= 0) break
+            delay(remaining)
+        }
+        render(context, manager, appWidgetId)
     }
 
     private suspend fun press(
@@ -192,6 +191,7 @@ class TvRemoteWidget : AppWidgetProvider() {
         Log.i(TAG, "press widget=$appWidgetId ${layout.id}/$slot ${assignment.label} " +
             "-> $result in ${SystemClock.elapsedRealtime() - startedAt}ms")
         setStatus(context, manager, appWidgetId, describe(context, assignment, result))
+        holdUntilResting(context, manager, settings, appWidgetId)
     }
 
     private fun describe(context: Context, assignment: SlotAssignment, result: SendResult): String =
@@ -231,7 +231,6 @@ class TvRemoteWidget : AppWidgetProvider() {
         private const val ACTION_PRESS = "com.tvremocon.PRESS"
         private const val EXTRA_SLOT = "slot"
         private const val EXTRA_LAYOUT = "layout"
-        private const val EXTRA_DISARM = "disarm"
         private const val ACTION_ARM = "com.tvremocon.ARM"
 
         /**
