@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KLAP runs over plain HTTP on port 80. Encrypting the payload with AES is a separate matter
+  from Android's transport policy, which blocks cleartext by default from targetSdk 28 on.
+
+  This cannot be scoped with a domain-config: those match hostnames, and the hub's address is
+  whatever DHCP handed out (and is re-discovered when it changes). The narrowing is enforced in
+  code instead — HubEndpoint rejects anything that is not a private IPv4 literal on port 80
+  under /app/, and the HTTP client does not follow redirects.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
