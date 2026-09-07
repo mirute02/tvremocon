@@ -181,6 +181,10 @@ seconds. Avoiding Jetpack Compose is what keeps that number down on-device.
 - `tools/klap_vectors.json` is generated from fake credentials and is safe to commit
 - Keep authHash, passwords and session cookies out of the logs
 
+## Related
+
+- [battery-manager](https://github.com/mirute02/battery-manager) — a script that keeps a laptop battery within a charge window by switching a Tapo smart plug.
+
 ## Licence and credits
 
 This repository is [MIT](LICENSE). Everything referenced or adapted, and the terms it came

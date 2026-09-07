@@ -164,6 +164,10 @@ studio run   ~/src/tvremocon --logcat           # インストールして起動
 - `tools/klap_vectors.json` は**架空の資格情報**から生成した固定ベクタなのでコミットしてよい
 - authHash・パスワード・セッション Cookie を**ログに出さないこと**
 
+## 関連プロジェクト
+
+- [battery-manager](https://github.com/mirute02/battery-manager) — Tapo スマートプラグの給電を切り替えて、ノートPCのバッテリー残量を一定範囲に保つスクリプト。
+
 ## ライセンスと出典
 
 このリポジトリのライセンスは [LICENSE](LICENSE)。
