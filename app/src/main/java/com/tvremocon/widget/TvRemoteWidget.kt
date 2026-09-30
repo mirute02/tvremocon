@@ -100,7 +100,7 @@ class TvRemoteWidget : AppWidgetProvider() {
         // Armed-ness is decided here, not by what is drawn. The painted state can go stale —
         // the process is killed mid-window and no repaint happens — and a stale picture must
         // never be able to fire the TV. A tap after the window closes wakes instead of sending.
-        if (settings.armedUntil(appWidgetId) <= now) {
+        if (liveUntil(settings, appWidgetId, now) <= now) {
             Log.d(TAG, "press widget=$appWidgetId ${layout.id}/$slot arrived while resting — waking")
             wake(context, manager, settings, appWidgetId, now)
             return
@@ -151,7 +151,7 @@ class TvRemoteWidget : AppWidgetProvider() {
         appWidgetId: Int,
         now: Long,
     ) {
-        val alreadyLive = settings.armedUntil(appWidgetId) > now
+        val alreadyLive = liveUntil(settings, appWidgetId, now) > now
         Log.d(TAG, "wake widget=$appWidgetId alreadyLive=$alreadyLive")
         settings.setArmedUntil(appWidgetId, now + ARMED_WINDOW_MS)
         if (alreadyLive) return // extend only; a second hold racing the first is how loops start
@@ -194,7 +194,8 @@ class TvRemoteWidget : AppWidgetProvider() {
             if (resting[appWidgetId]?.isActive == true) return
             resting[appWidgetId] = scope.launch {
                 while (true) {
-                    val remaining = settings.armedUntil(appWidgetId) - SystemClock.elapsedRealtime()
+                    val now = SystemClock.elapsedRealtime()
+                    val remaining = liveUntil(settings, appWidgetId, now) - now
                     if (remaining <= 0) break
                     delay(remaining)
                 }
@@ -321,6 +322,22 @@ class TvRemoteWidget : AppWidgetProvider() {
         /** One pending resting-repaint per widget, so taps do not pile up waiters. */
         private val resting = mutableMapOf<Int, Job>()
 
+        /**
+         * The stored deadline, unless it cannot belong to this boot.
+         *
+         * elapsedRealtime restarts at zero when the phone reboots, but the stored deadline
+         * does not, so one written late in a long uptime reads as hours or days in the future.
+         * Taken at face value the widget came back from a reboot lit and never rested — and
+         * a tap on it sent straight away instead of waking it. No real deadline is ever more
+         * than one window ahead, so anything further is from an earlier boot.
+         */
+        private fun liveUntil(settings: Settings, appWidgetId: Int, now: Long): Long =
+            effectiveDeadline(settings.armedUntil(appWidgetId), now)
+
+        @androidx.annotation.VisibleForTesting
+        internal fun effectiveDeadline(stored: Long, now: Long): Long =
+            if (stored - now > ARMED_WINDOW_MS) 0L else stored
+
         fun refresh(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             manager.getAppWidgetIds(ComponentName(context, TvRemoteWidget::class.java))
@@ -336,7 +353,8 @@ class TvRemoteWidget : AppWidgetProvider() {
         fun render(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
             val settings = Settings(context)
             val generation = settings.bumpRenderGeneration(appWidgetId)
-            val armed = settings.armedUntil(appWidgetId) > SystemClock.elapsedRealtime()
+            val now = SystemClock.elapsedRealtime()
+            val armed = liveUntil(settings, appWidgetId, now) > now
             Log.d(TAG, "render widget=$appWidgetId generation=$generation armed=$armed")
             draw(context, manager, appWidgetId, settings, generation, armed, statusOverride = null)
         }
