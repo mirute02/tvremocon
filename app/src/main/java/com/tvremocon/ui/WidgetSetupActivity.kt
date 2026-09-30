@@ -84,8 +84,15 @@ class WidgetSetupActivity : AppCompatActivity() {
         // The hub and its credentials belong to the account, not to this widget. If they are
         // already stored, placing a widget only has to choose which remote it drives — no
         // password prompt triggered by dropping something on the home screen.
-        if (settings.isConfigured && SecretStore(this).hasAuthHash()) {
-            showRemotePickerOnly(settings)
+        //
+        // Decided by whether the hash actually decrypts, not by whether its file exists. When
+        // it cannot be read the picker has nothing to authenticate with, and it used to hand
+        // off to the hub screen and finish — which the launcher reads as a cancelled
+        // placement, so the widget vanished and had to be placed and set up all over again.
+        // The form below keeps the widget and finishes its setup in one go.
+        val storedHash = if (settings.isConfigured) SecretStore(this).authHash() else null
+        if (storedHash != null) {
+            showRemotePickerOnly(settings, storedHash)
             return
         }
 
@@ -138,7 +145,7 @@ class WidgetSetupActivity : AppCompatActivity() {
     }
 
     /** Hub already known: skip straight to the remote list. */
-    private fun showRemotePickerOnly(settings: Settings) {
+    private fun showRemotePickerOnly(settings: Settings, authHash: ByteArray) {
         status = TextView(this).apply { setPadding(0, 0, 0, dp(12)) }
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // Present but unused; connect() reads them and they stay empty, so the stored hash
@@ -168,25 +175,17 @@ class WidgetSetupActivity : AppCompatActivity() {
                 )
             }
         )
-        loadRemotes()
+        loadRemotes(authHash)
     }
 
     /** Lists the hub's remotes using the stored credentials. */
-    private fun loadRemotes() {
+    private fun loadRemotes(authHash: ByteArray) {
         val settings = Settings(this)
         val network = wifiOrComplain() ?: return
         val endpoint = HubEndpoint.of(settings.host.orEmpty()) ?: run {
             status.text = getString(com.tvremocon.R.string.setup_bad_host)
             return
         }
-        val authHash = SecretStore(this).authHash() ?: run {
-            // The Keystore key is dropped when the screen lock changes, so this is a normal
-            // state, not a crash: ask for the password again.
-            startActivity(Intent(this, HubSetupActivity::class.java))
-            finish()
-            return
-        }
-
         status.text = getString(com.tvremocon.R.string.setup_connecting, endpoint.toString())
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {
