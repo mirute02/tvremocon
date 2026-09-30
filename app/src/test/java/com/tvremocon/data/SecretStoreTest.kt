@@ -25,8 +25,14 @@ class SecretStoreTest {
         // ciphertext will not come back.
         assertTrue(SecretStore.shouldDiscard(AEADBadTagException("tag mismatch")))
         assertTrue(SecretStore.shouldDiscard(KeyPermanentlyInvalidatedException()))
-        assertTrue(SecretStore.shouldDiscard(UnrecoverableKeyException("gone")))
-        assertTrue(SecretStore.shouldDiscard(InvalidKeyException("no such key")))
+    }
+
+    @Test
+    fun `the Keystore's generic wrappers keep the credentials`() {
+        // Android wraps whatever went wrong inside the Keystore — including not being ready
+        // yet after a reboot — in one of these. Treating them as "key gone" wiped setups.
+        assertFalse(SecretStore.shouldDiscard(InvalidKeyException("Keystore operation failed")))
+        assertFalse(SecretStore.shouldDiscard(UnrecoverableKeyException("Failed to obtain information about key")))
     }
 
     @Test

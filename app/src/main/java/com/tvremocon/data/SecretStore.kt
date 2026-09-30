@@ -6,9 +6,7 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Log
 import java.io.File
-import java.security.InvalidKeyException
 import java.security.KeyStore
-import java.security.UnrecoverableKeyException
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -38,7 +36,7 @@ class SecretStore(context: Context) {
 
     /** Encrypts and replaces the stored hash. */
     fun putAuthHash(authHash: ByteArray) {
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, keyForWriting()) }
         val ciphertext = cipher.doFinal(authHash)
         // iv length || iv || ciphertext. GCM's IV is 12 bytes here but the length is stored
         // rather than assumed, so a provider that picks differently still round-trips.
@@ -62,12 +60,19 @@ class SecretStore(context: Context) {
     fun authHash(): ByteArray? {
         if (!file.exists()) return null
         return try {
+            // Never creates a key. Generating one here used to be the fallback when the lookup
+            // came back empty, and that replaced the only key that could open this file — the
+            // decrypt then failed its tag check and the credentials were thrown away.
+            val key = existingKey() ?: run {
+                Log.w(TAG, "no Keystore key for the stored credentials; keeping the file")
+                return null
+            }
             val bytes = file.readBytes()
             val ivSize = bytes[0].toInt()
             val iv = bytes.copyOfRange(1, 1 + ivSize)
             val ciphertext = bytes.copyOfRange(1 + ivSize, bytes.size)
             Cipher.getInstance(TRANSFORMATION)
-                .apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, iv)) }
+                .apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv)) }
                 .doFinal(ciphertext)
         } catch (e: Exception) {
             if (shouldDiscard(e)) {
@@ -104,19 +109,25 @@ class SecretStore(context: Context) {
         internal fun shouldDiscard(e: Throwable): Boolean = when (e) {
             // The GCM tag did not check out: wrong key, or the file was altered.
             is AEADBadTagException -> true
-            // The Keystore entry no longer authorises this use, or is gone.
+            // The platform's own statement that the key will never work again.
             is KeyPermanentlyInvalidatedException -> true
-            is UnrecoverableKeyException -> true
-            is InvalidKeyException -> true
+            // Not its parent, InvalidKeyException, and not UnrecoverableKeyException: the
+            // Keystore wraps any failure it has into one of those — including "not ready yet"
+            // straight after a reboot — so they say nothing about the key being gone.
             // Everything else — IO, a busy Keystore, a malformed-but-rereadable file — is
             // treated as this attempt failing rather than the secret being lost.
             else -> false
         }
     }
 
-    private fun key(): SecretKey {
+    private fun existingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
+        return (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+    }
+
+    /** Only the write path may create the key: it is about to replace the file anyway. */
+    private fun keyForWriting(): SecretKey {
+        existingKey()?.let { return it }
 
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).apply {
             init(
