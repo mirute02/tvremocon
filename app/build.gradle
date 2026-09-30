@@ -11,12 +11,15 @@ android {
         applicationId "com.tvremocon"
         minSdk 31
         targetSdk 37
-        versionCode 3
-        versionName "1.0.2"
+        versionCode 4
+        versionName "1.0.3"
     }
     buildTypes {
         release {
-            minifyEnabled false
+            // Without this the APK carries every class of AppCompat, Material, OkHttp and
+            // the coroutines library whether used or not — about 10 MB of a 12 MB file.
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The widget looks these up by name at runtime (getIdentifier), and the idle variants' names
+  are built by appending "_idle", so the resource shrinker cannot see that they are used.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/widget_*,@color/widget_*,@id/*" />
