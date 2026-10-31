@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object RemoteSender {
 
-    private val hubs = ConcurrentHashMap<String, TapoIrHub>()
+    private val hubs = ConcurrentHashMap<String, CachedHub>()
 
     suspend fun send(context: Context, appWidgetId: Int, rawKeyName: String): SendResult {
         val app = context.applicationContext
@@ -120,18 +120,27 @@ object RemoteSender {
 
     private fun hubFor(host: String, authHash: ByteArray, network: Network): TapoIrHub? {
         val endpoint = HubEndpoint.of(host) ?: return null
-        return hubs.computeIfAbsent(host) {
-            TapoIrHub(
-                KlapTransport(
-                    endpoint = endpoint,
-                    authHash = authHash,
-                    // Pinned to Wi-Fi: without this Android routes over cellular whenever it
-                    // decides Wi-Fi has no internet, which is this hub's normal state.
-                    client = KlapTransport.httpClient(network.socketFactory),
-                )
-            )
-        }
+        // The cached client's socket factory is bound to the Network it was built on. Wi-Fi
+        // dropping and coming back (leaving home and returning) yields a new Network, and the
+        // old factory then fails every connect — which reads as HUB_UNREACHABLE for as long
+        // as the process lives, until setup happens to call invalidate(). Rebuild instead.
+        return hubs.compute(host) { _, cached ->
+            cached?.takeIf { it.network == network } ?: CachedHub(
+                network,
+                TapoIrHub(
+                    KlapTransport(
+                        endpoint = endpoint,
+                        authHash = authHash,
+                        // Pinned to Wi-Fi: without this Android routes over cellular whenever it
+                        // decides Wi-Fi has no internet, which is this hub's normal state.
+                        client = KlapTransport.httpClient(network.socketFactory),
+                    )
+                ),
+            ).also { if (cached != null) Log.i(TAG, "Wi-Fi network changed; reconnecting to $host") }
+        }!!.hub
     }
+
+    private class CachedHub(val network: Network, val hub: TapoIrHub)
 
     /** Drops cached connections after setup changes the host or credentials. */
     fun invalidate() {
